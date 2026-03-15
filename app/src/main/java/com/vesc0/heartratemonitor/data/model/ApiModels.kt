@@ -10,7 +10,10 @@ data class AuthTokenResponse(
     val username: String?,
     val email: String?,
     val age: Int?,
-    @SerializedName("health_issues") val healthIssues: String?
+    @SerializedName("health_issues") val healthIssues: String?,
+    val gender: String?,
+    @SerializedName("height_cm") val heightCm: Int?,
+    @SerializedName("weight_kg") val weightKg: Int?
 )
 
 data class RegisterResponse(
@@ -22,7 +25,10 @@ data class UserProfileResponse(
     val username: String,
     val email: String,
     val age: Int?,
-    @SerializedName("health_issues") val healthIssues: String?
+    @SerializedName("health_issues") val healthIssues: String?,
+    val gender: String?,
+    @SerializedName("height_cm") val heightCm: Int?,
+    @SerializedName("weight_kg") val weightKg: Int?
 )
 
 // --- Heart rate ---
@@ -38,12 +44,11 @@ data class HeartRateEntryResponse(
 // --- Stress prediction ---
 
 data class StressPredictRequest(
-    @SerializedName("mean_rr") val meanRR: Double,
+    // Time-domain HRV (11)
     val sdnn: Double,
     @SerializedName("median_rr") val medianRR: Double,
     @SerializedName("cv_rr") val cvRR: Double,
     val rmssd: Double,
-    val sdsd: Double,
     val pnn50: Double,
     val pnn20: Double,
     @SerializedName("mean_hr") val meanHR: Double,
@@ -51,12 +56,26 @@ data class StressPredictRequest(
     @SerializedName("min_hr") val minHR: Double,
     @SerializedName("max_hr") val maxHR: Double,
     @SerializedName("hr_range") val hrRange: Double,
-    @SerializedName("num_beats") val numBeats: Double
+    // Frequency-domain HRV (5)
+    @SerializedName("lf_power") val lfPower: Double = 0.0,
+    @SerializedName("hf_power") val hfPower: Double = 0.0,
+    @SerializedName("lf_hf_ratio") val lfHfRatio: Double = 0.0,
+    @SerializedName("total_power") val totalPower: Double = 0.0,
+    @SerializedName("lf_norm") val lfNorm: Double = 0.0,
+    // Nonlinear HRV (3)
+    val sd1: Double = 0.0,
+    val sd2: Double = 0.0,
+    @SerializedName("sd_ratio") val sdRatio: Double = 0.0,
+    // Demographics (optional)
+    val age: Double? = null,
+    @SerializedName("gender_male") val genderMale: Double? = null,
+    @SerializedName("height_cm") val heightCm: Double? = null,
+    @SerializedName("weight_kg") val weightKg: Double? = null
 )
 
 data class StressPredictResponse(
-    @SerializedName("is_stressed") val isStressed: Boolean,
-    @SerializedName("stress_level") val stressLevel: String
+    @SerializedName("stress_level_pct") val stressLevelPct: Double,
+    @SerializedName("is_stressed") val isStressed: Boolean
 )
 
 // --- Error ---

@@ -19,12 +19,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vesc0.heartratemonitor.data.model.HeartRateEntry
 import com.vesc0.heartratemonitor.data.model.SessionPhase
 import com.vesc0.heartratemonitor.ui.components.HeartTimerView
+import com.vesc0.heartratemonitor.viewmodel.AuthViewModel
 import com.vesc0.heartratemonitor.viewmodel.HeartRateViewModel
 import com.vesc0.heartratemonitor.viewmodel.StressViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StressScreen(vm: HeartRateViewModel) {
+fun StressScreen(vm: HeartRateViewModel, auth: AuthViewModel) {
     val stressVM: StressViewModel = viewModel()
     val phase by stressVM.phase.collectAsState()
     val currentBPM by stressVM.currentBPM.collectAsState()
@@ -35,27 +36,35 @@ fun StressScreen(vm: HeartRateViewModel) {
     val stressResult by stressVM.stressResult.collectAsState()
     val isPredicting by stressVM.isPredicting.collectAsState()
 
+    // Collect demographics from auth
+    val userAge by auth.age.collectAsState()
+    val userGender by auth.gender.collectAsState()
+    val userHeightCm by auth.heightCm.collectAsState()
+    val userWeightKg by auth.weightKg.collectAsState()
+
     // Save entry when finished
     val previousPhase = remember { mutableStateOf(phase) }
     LaunchedEffect(phase) {
         if (previousPhase.value == SessionPhase.MEASURING && phase == SessionPhase.FINISHED) {
             stressVM.currentBPM.value?.let { bpm ->
-                val stress = stressVM.stressResult.value?.stressLevel
-                vm.addEntry(HeartRateEntry(bpm = bpm, date = System.currentTimeMillis(), stressLevel = stress))
+                val pct = stressVM.stressResult.value?.stressLevelPct
+                val stressStr = pct?.let { "${it.toInt()}%" }
+                vm.addEntry(HeartRateEntry(bpm = bpm, date = System.currentTimeMillis(), stressLevel = stressStr))
             }
         }
         previousPhase.value = phase
     }
 
     // Update entry when stress prediction arrives
-    LaunchedEffect(stressResult?.stressLevel) {
-        val level = stressResult?.stressLevel ?: return@LaunchedEffect
+    LaunchedEffect(stressResult?.stressLevelPct) {
+        val pct = stressResult?.stressLevelPct ?: return@LaunchedEffect
         if (phase == SessionPhase.FINISHED) {
             val bpm = stressVM.currentBPM.value ?: return@LaunchedEffect
+            val stressStr = "${pct.toInt()}%"
             val idx = vm.log.value.indexOfFirst { it.bpm == bpm && it.stressLevel == null }
             if (idx >= 0) {
                 val old = vm.log.value[idx]
-                vm.updateEntry(idx, old.copy(stressLevel = level))
+                vm.updateEntry(idx, old.copy(stressLevel = stressStr))
             }
         }
     }
@@ -122,7 +131,13 @@ fun StressScreen(vm: HeartRateViewModel) {
                             )
                             Spacer(modifier = Modifier.height(24.dp))
                             Button(
-                                onClick = { stressVM.startSession() },
+                                onClick = {
+                                    stressVM.userAge = userAge?.toDoubleOrNull()
+                                    stressVM.userGender = userGender
+                                    stressVM.userHeightCm = userHeightCm?.toDoubleOrNull()
+                                    stressVM.userWeightKg = userWeightKg?.toDoubleOrNull()
+                                    stressVM.startSession()
+                                },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
                                 shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier
@@ -178,19 +193,38 @@ fun StressScreen(vm: HeartRateViewModel) {
                                 Text("Analysing…")
                             } else if (stressResult != null) {
                                 val result = stressResult!!
+                                val pct = result.stressLevelPct
+                                val color = when {
+                                    pct >= 70 -> Color.Red
+                                    pct >= 40 -> Color(0xFFFF9800)
+                                    else -> Color(0xFF4CAF50)
+                                }
+                                val label = when {
+                                    pct >= 70 -> "High Stress"
+                                    pct >= 40 -> "Moderate Stress"
+                                    else -> "Low Stress"
+                                }
                                 Icon(
-                                    if (result.isStressed) Icons.Filled.Warning
-                                    else Icons.Filled.Verified,
+                                    when {
+                                        pct >= 70 -> Icons.Filled.Warning
+                                        pct >= 40 -> Icons.Filled.Info
+                                        else -> Icons.Filled.Verified
+                                    },
                                     contentDescription = null,
                                     modifier = Modifier.size(56.dp),
-                                    tint = if (result.isStressed) Color.Red else Color(0xFF4CAF50)
+                                    tint = color
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text(
-                                    result.stressLevel,
-                                    fontSize = 28.sp,
+                                    "${pct.toInt()}%",
+                                    fontSize = 48.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (result.isStressed) Color.Red else Color(0xFF4CAF50)
+                                    color = color
+                                )
+                                Text(
+                                    label,
+                                    fontSize = 20.sp,
+                                    color = color
                                 )
                             }
 

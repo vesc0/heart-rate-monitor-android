@@ -73,7 +73,7 @@ fun AppNavigation() {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(Screen.MEASURE.route) { MeasurementScreen(vm = vm) }
-            composable(Screen.STRESS.route) { StressScreen(vm = vm) }
+            composable(Screen.STRESS.route) { StressScreen(vm = vm, auth = auth) }
             composable(Screen.HISTORY.route) { HistoryScreen(vm = vm) }
             composable(Screen.PROFILE.route) { ProfileScreen(auth = auth) }
         }

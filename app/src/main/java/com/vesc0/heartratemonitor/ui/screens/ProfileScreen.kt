@@ -35,6 +35,9 @@ fun ProfileScreen(auth: AuthViewModel) {
     val username by auth.username.collectAsState()
     val age by auth.age.collectAsState()
     val healthIssues by auth.healthIssues.collectAsState()
+    val gender by auth.gender.collectAsState()
+    val heightCm by auth.heightCm.collectAsState()
+    val weightKg by auth.weightKg.collectAsState()
 
     var showAuthSheet by remember { mutableStateOf(false) }
     var selectedAuthTab by remember { mutableIntStateOf(0) }
@@ -65,6 +68,9 @@ fun ProfileScreen(auth: AuthViewModel) {
                     email = email,
                     age = age,
                     healthIssues = healthIssues,
+                    gender = gender,
+                    heightCm = heightCm,
+                    weightKg = weightKg,
                     profileError = profileError,
                     onEdit = { editingField = it },
                     onSignOut = { auth.signOut() }
@@ -97,6 +103,9 @@ fun ProfileScreen(auth: AuthViewModel) {
             EditableField.NAME -> username ?: ""
             EditableField.EMAIL -> email ?: ""
             EditableField.AGE -> age ?: ""
+            EditableField.GENDER -> gender ?: ""
+            EditableField.HEIGHT -> heightCm ?: ""
+            EditableField.WEIGHT -> weightKg ?: ""
             EditableField.HEALTH -> healthIssues ?: ""
         }
         EditFieldDialog(
@@ -110,6 +119,9 @@ fun ProfileScreen(auth: AuthViewModel) {
                             EditableField.NAME -> auth.updateProfile(username = newValue)
                             EditableField.EMAIL -> auth.updateProfile(email = newValue)
                             EditableField.AGE -> auth.updateProfile(age = newValue.toIntOrNull())
+                            EditableField.GENDER -> auth.updateProfile(gender = newValue.lowercase())
+                            EditableField.HEIGHT -> auth.updateProfile(heightCm = newValue.toIntOrNull())
+                            EditableField.WEIGHT -> auth.updateProfile(weightKg = newValue.toIntOrNull())
                             EditableField.HEALTH -> auth.updateProfile(healthIssues = newValue)
                         }
                         profileError = null
@@ -189,6 +201,9 @@ private fun SignedInContent(
     email: String?,
     age: String?,
     healthIssues: String?,
+    gender: String?,
+    heightCm: String?,
+    weightKg: String?,
     profileError: String?,
     onEdit: (EditableField) -> Unit,
     onSignOut: () -> Unit
@@ -248,6 +263,12 @@ private fun SignedInContent(
             ProfileRow(Icons.Filled.Email, "Email", email ?: "", onClick = { onEdit(EditableField.EMAIL) })
             HorizontalDivider(modifier = Modifier.padding(start = 48.dp))
             ProfileRow(Icons.Filled.CalendarToday, "Age", age ?: "", onClick = { onEdit(EditableField.AGE) })
+            HorizontalDivider(modifier = Modifier.padding(start = 48.dp))
+            ProfileRow(Icons.Filled.Person, "Gender", gender ?: "", onClick = { onEdit(EditableField.GENDER) })
+            HorizontalDivider(modifier = Modifier.padding(start = 48.dp))
+            ProfileRow(Icons.Filled.Straighten, "Height (cm)", heightCm ?: "", onClick = { onEdit(EditableField.HEIGHT) })
+            HorizontalDivider(modifier = Modifier.padding(start = 48.dp))
+            ProfileRow(Icons.Filled.FitnessCenter, "Weight (kg)", weightKg ?: "", onClick = { onEdit(EditableField.WEIGHT) })
             HorizontalDivider(modifier = Modifier.padding(start = 48.dp))
             ProfileRow(Icons.Filled.HealthAndSafety, "Health", healthIssues ?: "", onClick = { onEdit(EditableField.HEALTH) })
         }
@@ -516,7 +537,7 @@ private fun SignUpContent(auth: AuthViewModel) {
 
 // ───────────────────── Edit field dialog ──────────────────────
 
-private enum class EditableField { NAME, EMAIL, AGE, HEALTH }
+private enum class EditableField { NAME, EMAIL, AGE, GENDER, HEIGHT, WEIGHT, HEALTH }
 
 @Composable
 private fun EditFieldDialog(
@@ -530,6 +551,9 @@ private fun EditFieldDialog(
         EditableField.NAME -> "Name"
         EditableField.EMAIL -> "Email"
         EditableField.AGE -> "Age"
+        EditableField.GENDER -> "Gender"
+        EditableField.HEIGHT -> "Height (cm)"
+        EditableField.WEIGHT -> "Weight (kg)"
         EditableField.HEALTH -> "Health Issues"
     }
 
@@ -543,7 +567,8 @@ private fun EditFieldDialog(
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 keyboardOptions = when (field) {
-                    EditableField.AGE -> KeyboardOptions(keyboardType = KeyboardType.Number)
+                    EditableField.AGE, EditableField.HEIGHT, EditableField.WEIGHT ->
+                        KeyboardOptions(keyboardType = KeyboardType.Number)
                     EditableField.EMAIL -> KeyboardOptions(keyboardType = KeyboardType.Email)
                     else -> KeyboardOptions.Default
                 },

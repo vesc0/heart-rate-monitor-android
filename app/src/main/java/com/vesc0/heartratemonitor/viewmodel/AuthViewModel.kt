@@ -30,6 +30,15 @@ class AuthViewModel : ViewModel() {
     private val _healthIssues = MutableStateFlow(PreferencesManager.healthIssues)
     val healthIssues = _healthIssues.asStateFlow()
 
+    private val _gender = MutableStateFlow(PreferencesManager.gender)
+    val gender = _gender.asStateFlow()
+
+    private val _heightCm = MutableStateFlow(PreferencesManager.heightCm)
+    val heightCm = _heightCm.asStateFlow()
+
+    private val _weightKg = MutableStateFlow(PreferencesManager.weightKg)
+    val weightKg = _weightKg.asStateFlow()
+
     // --- Auth actions ---
 
     suspend fun signUp(email: String, password: String) {
@@ -64,6 +73,9 @@ class AuthViewModel : ViewModel() {
         _username.value = null
         _age.value = null
         _healthIssues.value = null
+        _gender.value = null
+        _heightCm.value = null
+        _weightKg.value = null
         PreferencesManager.clearProfile()
     }
 
@@ -78,6 +90,9 @@ class AuthViewModel : ViewModel() {
                 _currentEmail.value = profile.email
                 _age.value = profile.age?.toString()
                 _healthIssues.value = profile.healthIssues
+                _gender.value = profile.gender
+                _heightCm.value = profile.heightCm?.toString()
+                _weightKg.value = profile.weightKg?.toString()
                 persistProfile()
             } catch (_: Exception) { }
         }
@@ -87,15 +102,21 @@ class AuthViewModel : ViewModel() {
         username: String? = null,
         email: String? = null,
         age: Int? = null,
-        healthIssues: String? = null
+        healthIssues: String? = null,
+        gender: String? = null,
+        heightCm: Int? = null,
+        weightKg: Int? = null
     ) {
         if (!api.isAuthenticated) return
         try {
-            val updated = api.updateProfile(username, email, age, healthIssues)
+            val updated = api.updateProfile(username, email, age, healthIssues, gender, heightCm, weightKg)
             _username.value = updated.username
             _currentEmail.value = updated.email
             _age.value = updated.age?.toString()
             _healthIssues.value = updated.healthIssues
+            _gender.value = updated.gender
+            _heightCm.value = updated.heightCm?.toString()
+            _weightKg.value = updated.weightKg?.toString()
             persistProfile()
         } catch (e: ApiService.ApiException) {
             throw AuthError(e.message ?: "Update failed.")
@@ -109,6 +130,9 @@ class AuthViewModel : ViewModel() {
         _username.value = response.username
         _age.value = response.age?.toString()
         _healthIssues.value = response.healthIssues
+        _gender.value = response.gender
+        _heightCm.value = response.heightCm?.toString()
+        _weightKg.value = response.weightKg?.toString()
         _isSignedIn.value = true
         persistProfile()
     }
@@ -118,6 +142,9 @@ class AuthViewModel : ViewModel() {
         PreferencesManager.username = _username.value
         PreferencesManager.age = _age.value
         PreferencesManager.healthIssues = _healthIssues.value
+        PreferencesManager.gender = _gender.value
+        PreferencesManager.heightCm = _heightCm.value
+        PreferencesManager.weightKg = _weightKg.value
     }
 
     private fun validateEmail(email: String) {

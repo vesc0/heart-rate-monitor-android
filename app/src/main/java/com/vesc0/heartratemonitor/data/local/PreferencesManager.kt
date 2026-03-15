@@ -45,12 +45,27 @@ object PreferencesManager {
         get() = prefs.getString("auth_health_issues", null)
         set(value) = prefs.edit().putString("auth_health_issues", value).apply()
 
+    var gender: String?
+        get() = prefs.getString("auth_gender", null)
+        set(value) = prefs.edit().putString("auth_gender", value).apply()
+
+    var heightCm: String?
+        get() = prefs.getString("auth_height_cm", null)
+        set(value) = prefs.edit().putString("auth_height_cm", value).apply()
+
+    var weightKg: String?
+        get() = prefs.getString("auth_weight_kg", null)
+        set(value) = prefs.edit().putString("auth_weight_kg", value).apply()
+
     fun clearProfile() {
         prefs.edit()
             .remove("auth_email")
             .remove("auth_username")
             .remove("auth_age")
             .remove("auth_health_issues")
+            .remove("auth_gender")
+            .remove("auth_height_cm")
+            .remove("auth_weight_kg")
             .apply()
     }
 

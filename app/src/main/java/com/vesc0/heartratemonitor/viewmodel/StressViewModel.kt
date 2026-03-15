@@ -12,7 +12,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.pow
+import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
@@ -21,6 +23,12 @@ import kotlin.math.sqrt
  * and HRV feature computation for stress prediction via the API.
  */
 class StressViewModel : ViewModel() {
+
+    // --- Demographics (injected from AuthViewModel) ---
+    var userAge: Double? = null
+    var userGender: String? = null
+    var userHeightCm: Double? = null
+    var userWeightKg: Double? = null
 
     // --- UI state ---
     private val _phase = MutableStateFlow(SessionPhase.IDLE)
@@ -189,11 +197,6 @@ class StressViewModel : ViewModel() {
             sqrt(diffs.sumOf { it * it } / diffs.size)
         } else 0.0
 
-        val sdsd = if (diffs.size > 1) {
-            val meanD = diffs.average()
-            sqrt(diffs.sumOf { (it - meanD).pow(2) } / (diffs.size - 1))
-        } else 0.0
-
         val pnn50 = if (diffs.isNotEmpty()) {
             diffs.count { abs(it) > 50 }.toDouble() / diffs.size * 100
         } else 0.0
@@ -211,13 +214,94 @@ class StressViewModel : ViewModel() {
             sqrt(hrs.sumOf { (it - meanHR).pow(2) } / (hrs.size - 1))
         } else 0.0
 
+        // --- Frequency-domain via DFT on interpolated RR ---
+        var lfPower = 0.0
+        var hfPower = 0.0
+        var lfHfRatio = 0.0
+        var totalPower = 0.0
+        var lfNorm = 0.0
+
+        if (rr.size >= 20) {
+            // Build cumulative time axis (seconds)
+            val tCum = mutableListOf(0.0)
+            for (i in rr.indices) tCum.add(tCum.last() + rr[i] / 1000.0)
+
+            // Interpolate to uniform 4 Hz
+            val fs = 4.0
+            val tMax = tCum.last()
+            val nSamples = (tMax * fs).toInt()
+            if (nSamples > 4) {
+                val uniform = DoubleArray(nSamples) { idx ->
+                    val t = idx / fs
+                    // Linear interpolation
+                    var j = tCum.indexOfFirst { it >= t }
+                    if (j <= 0) j = 1
+                    if (j >= tCum.size) j = tCum.size - 1
+                    val t0 = tCum[j - 1]
+                    val t1 = tCum[j]
+                    val rr0 = rr[(j - 1).coerceAtMost(rr.size - 1)]
+                    val rr1 = rr[(j).coerceAtMost(rr.size - 1)]
+                    val frac = if (t1 > t0) (t - t0) / (t1 - t0) else 0.0
+                    rr0 + frac * (rr1 - rr0)
+                }
+
+                // Remove mean
+                val uMean = uniform.average()
+                for (i in uniform.indices) uniform[i] -= uMean
+
+                // DFT power spectrum
+                val nFreq = nSamples / 2
+                val freqStep = fs / nSamples
+                var lfSum = 0.0
+                var hfSum = 0.0
+                var totalSum = 0.0
+
+                for (k in 1..nFreq) {
+                    val freq = k * freqStep
+                    var re = 0.0
+                    var im = 0.0
+                    for (ni in uniform.indices) {
+                        val angle = 2.0 * Math.PI * k * ni / nSamples
+                        re += uniform[ni] * cos(angle)
+                        im -= uniform[ni] * sin(angle)
+                    }
+                    val psd = (re * re + im * im) / nSamples
+                    totalSum += psd
+                    if (freq in 0.04..0.15) lfSum += psd
+                    if (freq in 0.15..0.40) hfSum += psd
+                }
+
+                lfPower = lfSum
+                hfPower = hfSum
+                totalPower = totalSum
+                lfHfRatio = if (hfPower > 0) lfPower / hfPower else 0.0
+                val lfHfTotal = lfPower + hfPower
+                lfNorm = if (lfHfTotal > 0) lfPower / lfHfTotal * 100.0 else 0.0
+            }
+        }
+
+        // --- Nonlinear (Poincaré) ---
+        val sd1: Double
+        val sd2: Double
+        val sdRatio: Double
+        if (diffs.isNotEmpty()) {
+            // SD1 = SDSD/√2 ≈ RMSSD/√2 (SDSD ≈ RMSSD for large N)
+            sd1 = rmssd / sqrt(2.0)
+            val sd2Sq = 2.0 * sdnn * sdnn - sd1 * sd1
+            sd2 = if (sd2Sq > 0) sqrt(sd2Sq) else 0.0
+            sdRatio = if (sd1 > 0) sd2 / sd1 else 0.0
+        } else {
+            sd1 = 0.0; sd2 = 0.0; sdRatio = 0.0
+        }
+
+        // --- Demographics ---
+        val genderMale = userGender?.let { if (it.lowercase() == "male") 1.0 else 0.0 }
+
         return StressPredictRequest(
-            meanRR = meanRR,
             sdnn = sdnn,
             medianRR = medianRR,
             cvRR = cvRR,
             rmssd = rmssd,
-            sdsd = sdsd,
             pnn50 = pnn50,
             pnn20 = pnn20,
             meanHR = meanHR,
@@ -225,7 +309,18 @@ class StressViewModel : ViewModel() {
             minHR = minHR,
             maxHR = maxHR,
             hrRange = hrRange,
-            numBeats = rr.size.toDouble()
+            lfPower = lfPower,
+            hfPower = hfPower,
+            lfHfRatio = lfHfRatio,
+            totalPower = totalPower,
+            lfNorm = lfNorm,
+            sd1 = sd1,
+            sd2 = sd2,
+            sdRatio = sdRatio,
+            age = userAge,
+            genderMale = genderMale,
+            heightCm = userHeightCm,
+            weightKg = userWeightKg
         )
     }
 

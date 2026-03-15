@@ -59,13 +59,19 @@ object ApiService {
         username: String? = null,
         email: String? = null,
         age: Int? = null,
-        healthIssues: String? = null
+        healthIssues: String? = null,
+        gender: String? = null,
+        heightCm: Int? = null,
+        weightKg: Int? = null
     ): UserProfileResponse {
         val body = mutableMapOf<String, Any>()
         username?.let { body["username"] = it }
         email?.let { body["email"] = it }
         age?.let { body["age"] = it }
         healthIssues?.let { body["heart_issues"] = it }
+        gender?.let { body["gender"] = it }
+        heightCm?.let { body["height_cm"] = it }
+        weightKg?.let { body["weight_kg"] = it }
         return put("/me", body, authenticated = true)
     }
 
