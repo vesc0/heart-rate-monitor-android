@@ -114,6 +114,7 @@ class HeartRateViewModel : ViewModel() {
             list[index] = entry
             _log.value = list
             saveLocal()
+            syncCreate(entry)
         }
     }
 

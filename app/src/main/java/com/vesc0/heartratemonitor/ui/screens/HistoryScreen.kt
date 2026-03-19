@@ -529,10 +529,10 @@ private fun MeasurementRow(
             Text("${entry.bpm} BPM", fontWeight = FontWeight.SemiBold)
             entry.stressLevel?.let {
                 Text(
-                    it,
+                    stressDisplayTextFor(it),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
-                    color = if (it == "Stressed") Color.Red else Color(0xFF4CAF50)
+                    color = stressColorFor(it)
                 )
             }
         }
@@ -541,5 +541,32 @@ private fun MeasurementRow(
             Text(dateFmt.format(Date(entry.date)), fontSize = 14.sp)
             Text(timeFmt.format(Date(entry.date)), fontSize = 12.sp, color = Color.Gray)
         }
+    }
+}
+
+private fun stressColorFor(stress: String): Color {
+    val pct = stress.replace("%", "").trim().toIntOrNull()
+    if (pct != null) {
+        return when {
+            pct >= 70 -> Color.Red
+            pct >= 40 -> Color(0xFFFF9800)
+            else -> Color(0xFF4CAF50)
+        }
+    }
+
+    val normalized = stress.lowercase(Locale.getDefault())
+    return when {
+        normalized.contains("high") || normalized.contains("stressed") -> Color.Red
+        normalized.contains("medium") || normalized.contains("moderate") -> Color(0xFFFF9800)
+        else -> Color(0xFF4CAF50)
+    }
+}
+
+private fun stressDisplayTextFor(stress: String): String {
+    val pct = stress.replace("%", "").trim().toIntOrNull()
+    return if (pct != null) {
+        "$pct% stressed"
+    } else {
+        stress
     }
 }
