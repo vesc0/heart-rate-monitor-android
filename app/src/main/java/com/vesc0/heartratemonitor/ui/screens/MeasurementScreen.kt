@@ -34,14 +34,15 @@ import com.vesc0.heartratemonitor.data.model.HeartRateEntry
 import com.vesc0.heartratemonitor.data.model.SessionPhase
 import com.vesc0.heartratemonitor.ui.components.HeartTimerView
 import com.vesc0.heartratemonitor.viewmodel.AutoHeartRateViewModel
+import com.vesc0.heartratemonitor.viewmodel.AuthViewModel
 import com.vesc0.heartratemonitor.viewmodel.HeartRateViewModel
 import java.util.concurrent.Executors
 
-private enum class MeasurementMode { MANUAL, AUTOMATIC }
+private enum class MeasurementMode { MANUAL, AUTOMATIC, STRESS }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MeasurementScreen(vm: HeartRateViewModel) {
+fun MeasurementScreen(vm: HeartRateViewModel, auth: AuthViewModel) {
     var mode by remember { mutableStateOf(MeasurementMode.AUTOMATIC) }
 
     Scaffold(
@@ -64,7 +65,7 @@ fun MeasurementScreen(vm: HeartRateViewModel) {
                     SegmentedButton(
                         selected = mode == MeasurementMode.MANUAL,
                         onClick = { mode = MeasurementMode.MANUAL },
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 3),
                         colors = SegmentedButtonDefaults.colors(
                             activeContainerColor = MaterialTheme.colorScheme.primary,
                             activeContentColor = MaterialTheme.colorScheme.onPrimary
@@ -73,18 +74,28 @@ fun MeasurementScreen(vm: HeartRateViewModel) {
                     SegmentedButton(
                         selected = mode == MeasurementMode.AUTOMATIC,
                         onClick = { mode = MeasurementMode.AUTOMATIC },
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 3),
                         colors = SegmentedButtonDefaults.colors(
                             activeContainerColor = MaterialTheme.colorScheme.primary,
                             activeContentColor = MaterialTheme.colorScheme.onPrimary
                         )
                     ) { Text("Automatic") }
+                    SegmentedButton(
+                        selected = mode == MeasurementMode.STRESS,
+                        onClick = { mode = MeasurementMode.STRESS },
+                        shape = SegmentedButtonDefaults.itemShape(index = 2, count = 3),
+                        colors = SegmentedButtonDefaults.colors(
+                            activeContainerColor = MaterialTheme.colorScheme.primary,
+                            activeContentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) { Text("Stress") }
                 }
             }
 
             when (mode) {
                 MeasurementMode.MANUAL -> ManualContent(vm = vm)
                 MeasurementMode.AUTOMATIC -> AutoContent(vm = vm)
+                MeasurementMode.STRESS -> StressContent(vm = vm, auth = auth)
             }
         }
     }

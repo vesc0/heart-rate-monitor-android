@@ -16,14 +16,12 @@ import androidx.navigation.compose.rememberNavController
 import com.vesc0.heartratemonitor.ui.screens.HistoryScreen
 import com.vesc0.heartratemonitor.ui.screens.MeasurementScreen
 import com.vesc0.heartratemonitor.ui.screens.ProfileScreen
-import com.vesc0.heartratemonitor.ui.screens.StressScreen
 import com.vesc0.heartratemonitor.viewmodel.AuthViewModel
 import com.vesc0.heartratemonitor.viewmodel.HeartRateViewModel
 
 private enum class Screen(val route: String, val label: String, val icon: ImageVector) {
     MEASURE("measure", "Measure", Icons.Filled.Favorite),
-    STRESS("stress", "Stress", Icons.Filled.Psychology),
-    HISTORY("history", "History", Icons.AutoMirrored.Filled.List),
+    HISTORY("history", "Stats", Icons.AutoMirrored.Filled.List),
     PROFILE("profile", "Profile", Icons.Filled.AccountCircle)
 }
 
@@ -72,8 +70,7 @@ fun AppNavigation() {
             startDestination = Screen.MEASURE.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable(Screen.MEASURE.route) { MeasurementScreen(vm = vm) }
-            composable(Screen.STRESS.route) { StressScreen(vm = vm, auth = auth) }
+            composable(Screen.MEASURE.route) { MeasurementScreen(vm = vm, auth = auth) }
             composable(Screen.HISTORY.route) { HistoryScreen(vm = vm) }
             composable(Screen.PROFILE.route) { ProfileScreen(auth = auth) }
         }

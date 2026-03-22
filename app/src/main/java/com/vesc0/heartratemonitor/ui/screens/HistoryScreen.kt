@@ -1,7 +1,6 @@
 package com.vesc0.heartratemonitor.ui.screens
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -31,9 +30,9 @@ import com.vesc0.heartratemonitor.viewmodel.HeartRateViewModel
 import java.text.SimpleDateFormat
 import java.util.*
 
-private enum class RangeMode { WEEKLY, MONTHLY }
+private enum class HistoryMetric { HEART_RATE, STRESS }
 
-private data class DailyBpmRange(
+private data class DailyMetricRange(
     val dayMillis: Long,
     val min: Int,
     val max: Int,
@@ -44,8 +43,7 @@ private data class DailyBpmRange(
 @Composable
 fun HistoryScreen(vm: HeartRateViewModel) {
     val log by vm.log.collectAsState()
-    var rangeMode by remember { mutableStateOf(RangeMode.WEEKLY) }
-    var weekOffset by remember { mutableIntStateOf(0) }
+    var metricMode by remember { mutableStateOf(HistoryMetric.HEART_RATE) }
     var monthOffset by remember { mutableIntStateOf(0) }
     var selectedDay by remember { mutableStateOf<Long?>(null) }
     var visibleCount by remember { mutableIntStateOf(5) }
@@ -55,8 +53,6 @@ fun HistoryScreen(vm: HeartRateViewModel) {
     val calendar = remember {
         Calendar.getInstance().apply { firstDayOfWeek = Calendar.MONDAY }
     }
-
-    // --- Period computations ---
 
     fun startOfDay(millis: Long): Long {
         val cal = calendar.clone() as Calendar
@@ -70,16 +66,6 @@ fun HistoryScreen(vm: HeartRateViewModel) {
 
     val todayStart = startOfDay(System.currentTimeMillis())
 
-    fun weekRange(): Pair<Long, Long> {
-        val cal = calendar.clone() as Calendar
-        cal.timeInMillis = todayStart
-        cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
-        val mondayOfCurrent = cal.timeInMillis
-        val start = mondayOfCurrent + weekOffset * 7L * 86_400_000L
-        val end = start + 6L * 86_400_000L
-        return start to end
-    }
-
     fun monthRange(): Pair<Long, Long> {
         val cal = calendar.clone() as Calendar
         cal.timeInMillis = todayStart
@@ -90,11 +76,6 @@ fun HistoryScreen(vm: HeartRateViewModel) {
         cal.add(Calendar.DAY_OF_MONTH, -1)
         val end = cal.timeInMillis
         return start to end
-    }
-
-    fun weekDays(): List<Long> {
-        val (start, _) = weekRange()
-        return (0..6).map { start + it * 86_400_000L }
     }
 
     fun monthDays(): List<Long> {
@@ -108,12 +89,15 @@ fun HistoryScreen(vm: HeartRateViewModel) {
         return days
     }
 
-    // --- Aggregation ---
+    fun stressPct(stress: String?): Int? {
+        if (stress == null) return null
+        return stress.replace("%", "").trim().toIntOrNull()
+    }
 
-    val dailyRangesAll = remember(log) {
+    val heartRateDailyRangesAll = remember(log) {
         log.groupBy { startOfDay(it.date) }
             .map { (day, entries) ->
-                DailyBpmRange(
+                DailyMetricRange(
                     dayMillis = day,
                     min = entries.minOf { it.bpm },
                     max = entries.maxOf { it.bpm },
@@ -123,43 +107,65 @@ fun HistoryScreen(vm: HeartRateViewModel) {
             .sortedBy { it.dayMillis }
     }
 
-    val dailyRangesMap = remember(dailyRangesAll) {
-        dailyRangesAll.associateBy { it.dayMillis }
+    val stressDailyRangesAll = remember(log) {
+        val stressValues = log.mapNotNull { entry ->
+            stressPct(entry.stressLevel)?.let { pct -> startOfDay(entry.date) to pct }
+        }
+
+        stressValues.groupBy { it.first }
+            .map { (day, pairs) ->
+                val values = pairs.map { it.second }
+                DailyMetricRange(
+                    dayMillis = day,
+                    min = values.min(),
+                    max = values.max(),
+                    avg = values.sum() / values.size
+                )
+            }
+            .sortedBy { it.dayMillis }
     }
 
-    val currentDailyRanges = remember(rangeMode, weekOffset, monthOffset, dailyRangesMap) {
-        val days = if (rangeMode == RangeMode.WEEKLY) weekDays() else monthDays()
-        days.mapNotNull { dailyRangesMap[it] }
+    val dailyRangesMap = remember(metricMode, heartRateDailyRangesAll, stressDailyRangesAll) {
+        val source = if (metricMode == HistoryMetric.HEART_RATE) heartRateDailyRangesAll else stressDailyRangesAll
+        source.associateBy { it.dayMillis }
     }
 
-    // --- Stats ---
+    val monthDays = remember(monthOffset) { monthDays() }
 
-    fun periodStats(ranges: List<DailyBpmRange>): Triple<Int, Int, Int>? {
+    val currentDailyRanges = remember(monthDays, dailyRangesMap) {
+        monthDays.mapNotNull { dailyRangesMap[it] }
+    }
+
+    fun periodStats(ranges: List<DailyMetricRange>): Triple<Int, Int, Int>? {
         if (ranges.isEmpty()) return null
         val mins = ranges.map { it.min }.filter { it > 0 }
         val maxs = ranges.map { it.max }.filter { it > 0 }
         val avgs = ranges.map { it.avg }.filter { it > 0 }
-        if (mins.isEmpty()) return null
+        if (mins.isEmpty() || maxs.isEmpty() || avgs.isEmpty()) return null
         return Triple(mins.min(), avgs.average().toInt(), maxs.max())
     }
 
-    val stats = remember(currentDailyRanges, selectedDay, rangeMode) {
-        if (rangeMode == RangeMode.WEEKLY && selectedDay != null) {
+    val stats = remember(currentDailyRanges, selectedDay) {
+        if (selectedDay != null) {
             dailyRangesMap[selectedDay]?.let { Triple(it.min, it.avg, it.max) }
         } else {
             periodStats(currentDailyRanges)
         }
     }
 
-    // --- Filtering measurements ---
-
-    val filteredMeasurements = remember(log, rangeMode, weekOffset, monthOffset, selectedDay) {
-        val (start, end) = if (rangeMode == RangeMode.WEEKLY) weekRange() else monthRange()
+    val filteredMeasurements = remember(log, metricMode, monthOffset, selectedDay) {
+        val (start, end) = monthRange()
         val endOfDay = end + 86_400_000L - 1
-        if (rangeMode == RangeMode.WEEKLY && selectedDay != null) {
-            log.filter { it.date >= selectedDay!! && it.date <= selectedDay!! + 86_400_000L - 1 }
+        val base = log.filter { it.date in start..endOfDay }
+        val metricFiltered = if (metricMode == HistoryMetric.STRESS) {
+            base.filter { it.stressLevel != null }
         } else {
-            log.filter { it.date in start..endOfDay }
+            base
+        }
+        if (selectedDay != null) {
+            metricFiltered.filter { it.date in selectedDay!!..(selectedDay!! + 86_400_000L - 1) }
+        } else {
+            metricFiltered
         }
     }
 
@@ -169,22 +175,21 @@ fun HistoryScreen(vm: HeartRateViewModel) {
 
     val hasMore = visibleCount < filteredMeasurements.size
 
-    // --- Period title ---
+    val periodTitle = remember(monthOffset) {
+        val (start, _) = monthRange()
+        SimpleDateFormat("LLLL yyyy", Locale.getDefault()).format(Date(start))
+    }
 
-    val periodTitle = remember(rangeMode, weekOffset, monthOffset) {
-        val fmt = SimpleDateFormat("MMM d", Locale.getDefault())
-        val yearFmt = SimpleDateFormat("yyyy", Locale.getDefault())
-        if (rangeMode == RangeMode.WEEKLY) {
-            val (start, end) = weekRange()
-            "${fmt.format(Date(start))} – ${fmt.format(Date(end))}, ${yearFmt.format(Date(end))}"
+    val measurementHeaderTitle = remember(monthOffset, selectedDay) {
+        if (selectedDay != null) {
+            "Measurements - ${SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(Date(selectedDay!!))}"
         } else {
-            val (start, _) = monthRange()
-            SimpleDateFormat("LLLL yyyy", Locale.getDefault()).format(Date(start))
+            "Measurements - $periodTitle"
         }
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("History") }) }
+        topBar = { TopAppBar(title = { Text("Stats") }) }
     ) { padding ->
         if (log.isEmpty()) {
             Column(
@@ -197,7 +202,7 @@ fun HistoryScreen(vm: HeartRateViewModel) {
                 Text("No Records", fontSize = 22.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Records will appear here after you complete a measurement",
+                    "Records will appear here after you complete a measurement.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 32.dp)
@@ -215,42 +220,50 @@ fun HistoryScreen(vm: HeartRateViewModel) {
                     .padding(padding),
                 contentPadding = PaddingValues(horizontal = 12.dp)
             ) {
-                // Range mode picker
                 item {
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                    SingleChoiceSegmentedButtonRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                    ) {
                         SegmentedButton(
-                            selected = rangeMode == RangeMode.WEEKLY,
+                            selected = metricMode == HistoryMetric.HEART_RATE,
                             onClick = {
-                                rangeMode = RangeMode.WEEKLY; weekOffset = 0; selectedDay = null
+                                metricMode = HistoryMetric.HEART_RATE
+                                monthOffset = 0
+                                selectedDay = null
                             },
                             shape = SegmentedButtonDefaults.itemShape(0, 2),
                             colors = SegmentedButtonDefaults.colors(
                                 activeContainerColor = MaterialTheme.colorScheme.primary,
                                 activeContentColor = MaterialTheme.colorScheme.onPrimary
                             )
-                        ) { Text("Weekly") }
+                        ) { Text("Heart Rate") }
                         SegmentedButton(
-                            selected = rangeMode == RangeMode.MONTHLY,
+                            selected = metricMode == HistoryMetric.STRESS,
                             onClick = {
-                                rangeMode = RangeMode.MONTHLY; monthOffset = 0; selectedDay = null
+                                metricMode = HistoryMetric.STRESS
+                                monthOffset = 0
+                                selectedDay = null
                             },
                             shape = SegmentedButtonDefaults.itemShape(1, 2),
                             colors = SegmentedButtonDefaults.colors(
                                 activeContainerColor = MaterialTheme.colorScheme.primary,
                                 activeContentColor = MaterialTheme.colorScheme.onPrimary
                             )
-                        ) { Text("Monthly") }
+                        ) { Text("Stress") }
                     }
                 }
 
-                // Period navigation
                 item {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         IconButton(onClick = {
-                            if (rangeMode == RangeMode.WEEKLY) weekOffset-- else monthOffset--
+                            monthOffset--
                             selectedDay = null
                         }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous")
@@ -258,10 +271,10 @@ fun HistoryScreen(vm: HeartRateViewModel) {
                         Spacer(modifier = Modifier.weight(1f))
                         Text(periodTitle, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.weight(1f))
-                        val canGoForward = if (rangeMode == RangeMode.WEEKLY) weekOffset < 0 else monthOffset < 0
+                        val canGoForward = monthOffset < 0
                         IconButton(
                             onClick = {
-                                if (rangeMode == RangeMode.WEEKLY) weekOffset++ else monthOffset++
+                                monthOffset++
                                 selectedDay = null
                             },
                             enabled = canGoForward
@@ -276,19 +289,24 @@ fun HistoryScreen(vm: HeartRateViewModel) {
                     }
                 }
 
-                // Chart
                 item {
-                    BpmRangeChart(
+                    Text(
+                        if (metricMode == HistoryMetric.HEART_RATE) "Heart Rate (Monthly)" else "Stress (Monthly)",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
+                    )
+                }
+
+                item {
+                    MetricRangeChart(
                         data = currentDailyRanges,
-                        allDays = if (rangeMode == RangeMode.WEEKLY) weekDays() else monthDays(),
+                        allDays = monthDays,
                         selectedDay = selectedDay,
                         onDaySelected = { day ->
-                            if (rangeMode == RangeMode.WEEKLY) {
-                                selectedDay = if (selectedDay == day) null else day
-                                visibleCount = 5
-                            }
+                            selectedDay = if (selectedDay == day) null else day
+                            visibleCount = 5
                         },
-                        isWeekly = rangeMode == RangeMode.WEEKLY,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(220.dp)
@@ -296,7 +314,6 @@ fun HistoryScreen(vm: HeartRateViewModel) {
                     )
                 }
 
-                // Stats
                 if (stats != null) {
                     item {
                         val (min, avg, max) = stats!!
@@ -306,44 +323,51 @@ fun HistoryScreen(vm: HeartRateViewModel) {
                                 .padding(vertical = 8.dp),
                             horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
-                            StatPill("Min", min)
-                            StatPill("Avg", avg)
-                            StatPill("Max", max)
+                            StatPill("Min", min, metricMode)
+                            StatPill("Avg", avg, metricMode)
+                            StatPill("Max", max, metricMode)
                         }
                     }
                 }
 
-                // Measurements header
                 item {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 16.dp, bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(top = 16.dp, bottom = 4.dp)
                     ) {
-                        Text("Measurements", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Spacer(modifier = Modifier.weight(1f))
-                        if (isSelectionMode) {
-                            TextButton(onClick = {
-                                isSelectionMode = false; selectedEntries = emptySet()
-                            }) { Text("Cancel") }
-                            TextButton(onClick = {
-                                selectedEntries = filteredMeasurements.map { it.id }.toSet()
-                            }) { Text("Select All") }
-                            TextButton(
-                                onClick = {
-                                    vm.deleteEntries(selectedEntries)
-                                    isSelectionMode = false; selectedEntries = emptySet()
-                                },
-                                enabled = selectedEntries.isNotEmpty()
-                            ) { Text("Delete", color = if (selectedEntries.isNotEmpty()) Color.Red else Color.Gray) }
-                        } else {
-                            TextButton(onClick = { isSelectionMode = true }) { Text("Select") }
+                        Text(measurementHeaderTitle, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isSelectionMode) {
+                                TextButton(onClick = {
+                                    isSelectionMode = false
+                                    selectedEntries = emptySet()
+                                }) { Text("Cancel") }
+                                TextButton(onClick = {
+                                    selectedEntries = filteredMeasurements.map { it.id }.toSet()
+                                }) { Text("Select All") }
+                                TextButton(
+                                    onClick = {
+                                        vm.deleteEntries(selectedEntries)
+                                        isSelectionMode = false
+                                        selectedEntries = emptySet()
+                                    },
+                                    enabled = selectedEntries.isNotEmpty()
+                                ) {
+                                    Text("Delete", color = if (selectedEntries.isNotEmpty()) Color.Red else Color.Gray)
+                                }
+                            } else {
+                                TextButton(onClick = { isSelectionMode = true }) { Text("Select") }
+                            }
                         }
                     }
                 }
 
-                // Measurement list
                 itemsIndexed(pagedLog, key = { _, e -> e.id }) { _, entry ->
                     MeasurementRow(
                         entry = entry,
@@ -364,7 +388,9 @@ fun HistoryScreen(vm: HeartRateViewModel) {
                         Button(
                             onClick = { visibleCount += 5 },
                             colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
                         ) { Text("Show more", fontWeight = FontWeight.SemiBold) }
                     }
                 }
@@ -373,22 +399,16 @@ fun HistoryScreen(vm: HeartRateViewModel) {
     }
 }
 
-// ──────────────────────────── Chart ────────────────────────────
-
 @Composable
-private fun BpmRangeChart(
-    data: List<DailyBpmRange>,
+private fun MetricRangeChart(
+    data: List<DailyMetricRange>,
     allDays: List<Long>,
     selectedDay: Long?,
     onDaySelected: (Long) -> Unit,
-    isWeekly: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val daysFmt = remember { SimpleDateFormat("EEE", Locale.getDefault()) }
-
     Canvas(
-        modifier = modifier.pointerInput(data, isWeekly) {
-            if (!isWeekly) return@pointerInput
+        modifier = modifier.pointerInput(data) {
             detectTapGestures { offset ->
                 val leftPad = 8f
                 val rightPad = 48f
@@ -411,25 +431,23 @@ private fun BpmRangeChart(
 
         if (data.isEmpty() || allDays.isEmpty()) return@Canvas
 
-        // Y-axis range
-        val allMin = data.minOf { it.min }.coerceAtLeast(40)
+        val allMin = data.minOf { it.min }.coerceAtLeast(0)
         val allMax = data.maxOf { it.max }.coerceAtMost(200)
-        val yMin = (allMin - 10).coerceAtLeast(30)
+        val yMin = (allMin - 10).coerceAtLeast(0)
         val yMax = allMax + 10
 
-        fun yPos(bpm: Int): Float =
-            topPad + chartH * (1 - (bpm - yMin).toFloat() / (yMax - yMin))
+        fun yPos(value: Int): Float =
+            topPad + chartH * (1 - (value - yMin).toFloat() / (yMax - yMin).coerceAtLeast(1))
 
-        val barWidth = if (isWeekly) 14f else 6f
         val dataMap = data.associateBy { it.dayMillis }
 
         allDays.forEachIndexed { i, dayMs ->
             val range = dataMap[dayMs] ?: return@forEachIndexed
             val x = leftPad + chartW * (i + 0.5f) / allDays.size
             val isSelected = selectedDay == dayMs
-            val alpha = if (isWeekly && selectedDay != null && !isSelected) 0.35f else 1f
+            val alpha = if (selectedDay != null && !isSelected) 0.35f else 1f
             val barColor = if (isSelected) Color.Red else Color.Red.copy(alpha = 0.85f)
-            val width = if (isWeekly && isSelected) 18f else barWidth
+            val width = if (isSelected) 18f else 6f
 
             drawLine(
                 color = barColor.copy(alpha = alpha),
@@ -440,44 +458,35 @@ private fun BpmRangeChart(
             )
         }
 
-        // Y-axis labels
         val paint = android.graphics.Paint().apply {
             textSize = 28f
             color = android.graphics.Color.GRAY
             textAlign = android.graphics.Paint.Align.LEFT
         }
-        listOf(yMin, (yMin + yMax) / 2, yMax).forEach { bpm ->
+        listOf(yMin, (yMin + yMax) / 2, yMax).forEach { value ->
             drawContext.canvas.nativeCanvas.drawText(
-                "$bpm", size.width - rightPad + 4, yPos(bpm) + 10, paint
+                "$value", size.width - rightPad + 4, yPos(value) + 10, paint
             )
         }
 
-        // X-axis labels
         val xPaint = android.graphics.Paint().apply {
             textSize = 24f
             color = android.graphics.Color.GRAY
             textAlign = android.graphics.Paint.Align.CENTER
         }
-        val labelStep = if (isWeekly) 1 else maxOf(1, allDays.size / 4)
-        for (i in allDays.indices step labelStep) {
+
+        val tickIndices = linkedSetOf(0, 9, 19, allDays.lastIndex).filter { it in allDays.indices }
+        tickIndices.forEach { i ->
             val x = leftPad + chartW * (i + 0.5f) / allDays.size
-            val label = if (isWeekly) {
-                daysFmt.format(Date(allDays[i]))
-            } else {
-                val cal = Calendar.getInstance().apply { timeInMillis = allDays[i] }
-                "${cal.get(Calendar.DAY_OF_MONTH)}"
-            }
-            drawContext.canvas.nativeCanvas.drawText(
-                label, x, size.height - 2, xPaint
-            )
+            val cal = Calendar.getInstance().apply { timeInMillis = allDays[i] }
+            val label = "${cal.get(Calendar.DAY_OF_MONTH)}"
+            drawContext.canvas.nativeCanvas.drawText(label, x, size.height - 2, xPaint)
         }
     }
 }
 
-// ──────────────────────────── Helpers ──────────────────────────
-
 @Composable
-private fun StatPill(title: String, value: Int) {
+private fun StatPill(title: String, value: Int, metricMode: HistoryMetric) {
     Surface(
         shape = RoundedCornerShape(50),
         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -493,7 +502,11 @@ private fun StatPill(title: String, value: Int) {
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Text("$value BPM", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (metricMode == HistoryMetric.HEART_RATE) "$value BPM" else "$value%",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
+            )
         }
     }
 }

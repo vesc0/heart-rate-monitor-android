@@ -88,4 +88,12 @@ object PreferencesManager {
     fun clearLog() {
         prefs.edit().remove("heart_rate_log").apply()
     }
+
+    // --- Onboarding ---
+
+    var hasSeenWelcome: Boolean
+        get() = prefs.getBoolean("has_seen_welcome", false)
+        set(value) {
+            prefs.edit().putBoolean("has_seen_welcome", value).apply()
+        }
 }

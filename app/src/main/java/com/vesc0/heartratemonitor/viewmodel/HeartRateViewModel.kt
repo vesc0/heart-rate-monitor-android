@@ -179,7 +179,8 @@ class HeartRateViewModel : ViewModel() {
                 val hour = listOf(9, 14, 20).random() + i
                 val minute = (0 until 60).random()
                 val ts = dayStart + hour * 3_600_000L + minute * 60_000L
-                entries.add(HeartRateEntry(bpm = bpm, date = ts))
+                val stress = if ((0..1).random() == 1) "${(18..92).random()}%" else null
+                entries.add(HeartRateEntry(bpm = bpm, date = ts, stressLevel = stress))
             }
         }
         entries.sortByDescending { it.date }

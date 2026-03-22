@@ -55,14 +55,14 @@ fun ProfileScreen(auth: AuthViewModel) {
     Scaffold(
         topBar = { TopAppBar(title = { Text("Profile") }) }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp)
-        ) {
-            if (isSignedIn) {
+        if (isSignedIn) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp)
+            ) {
                 SignedInContent(
                     username = username,
                     email = email,
@@ -75,7 +75,15 @@ fun ProfileScreen(auth: AuthViewModel) {
                     onEdit = { editingField = it },
                     onSignOut = { auth.signOut() }
                 )
-            } else {
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center
+            ) {
                 SignedOutContent(onShowAuth = {
                     selectedAuthTab = 0
                     showAuthSheet = true
@@ -141,7 +149,7 @@ fun ProfileScreen(auth: AuthViewModel) {
 @Composable
 private fun SignedOutContent(onShowAuth: () -> Unit) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(top = 60.dp),
+        modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Icon(

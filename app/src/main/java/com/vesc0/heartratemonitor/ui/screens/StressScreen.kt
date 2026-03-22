@@ -26,6 +26,12 @@ import com.vesc0.heartratemonitor.viewmodel.StressViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StressScreen(vm: HeartRateViewModel, auth: AuthViewModel) {
+    StressContent(vm = vm, auth = auth, showTopBar = true)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun StressContent(vm: HeartRateViewModel, auth: AuthViewModel, showTopBar: Boolean = false) {
     val stressVM: StressViewModel = viewModel()
     val phase by stressVM.phase.collectAsState()
     val currentBPM by stressVM.currentBPM.collectAsState()
@@ -69,12 +75,14 @@ fun StressScreen(vm: HeartRateViewModel, auth: AuthViewModel) {
         }
     }
 
-    Scaffold(
-        topBar = {
-            if (phase == SessionPhase.IDLE) {
-                TopAppBar(title = { Text("Stress") })
-            }
+    val topBarContent: @Composable () -> Unit = {
+        if (showTopBar && phase == SessionPhase.IDLE) {
+            TopAppBar(title = { Text("Stress") })
         }
+    }
+
+    Scaffold(
+        topBar = topBarContent
     ) { padding ->
         Box(
             modifier = Modifier
