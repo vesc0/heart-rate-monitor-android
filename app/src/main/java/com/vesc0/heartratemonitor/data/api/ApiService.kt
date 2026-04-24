@@ -11,11 +11,12 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 object ApiService {
 
-    private const val BASE_URL = "http://127.0.0.1:8000"
+    private const val BASE_URL = "https://heartratemonitorapi-gwa6gbfpb7f0gwh8.polandcentral-01.azurewebsites.net"
 
     private val JSON_MEDIA = "application/json; charset=utf-8".toMediaType()
 
@@ -31,6 +32,9 @@ object ApiService {
         set(value) { PreferencesManager.token = value }
 
     val isAuthenticated: Boolean get() = token != null
+
+    // Set by AuthViewModel to react to 401 globally.
+    var onAuthTokenExpired: (() -> Unit)? = null
 
     // --- Auth ---
 
@@ -56,7 +60,7 @@ object ApiService {
         get("/me", authenticated = true)
 
     suspend fun updateProfile(
-        username: String? = null,
+        name: String? = null,
         email: String? = null,
         age: Int? = null,
         healthIssues: String? = null,
@@ -65,10 +69,10 @@ object ApiService {
         weightKg: Int? = null
     ): UserProfileResponse {
         val body = mutableMapOf<String, Any>()
-        username?.let { body["username"] = it }
+        name?.let { body["name"] = it }
         email?.let { body["email"] = it }
         age?.let { body["age"] = it }
-        healthIssues?.let { body["heart_issues"] = it }
+        healthIssues?.let { body["health_issues"] = it }
         gender?.let { body["gender"] = it }
         heightCm?.let { body["height_cm"] = it }
         weightKg?.let { body["weight_kg"] = it }
@@ -81,11 +85,13 @@ object ApiService {
         id: String? = null,
         bpm: Int,
         recordedAt: String, // ISO8601
-        stressLevel: String? = null
+        stressLevel: String? = null,
+        activityState: MeasurementState? = null
     ): HeartRateEntryResponse {
         val body = mutableMapOf<String, Any>("bpm" to bpm, "recorded_at" to recordedAt)
-        id?.let { body["id"] = it }
+        id?.let { body["id"] = it.lowercase(Locale.US) }
         stressLevel?.let { body["stress_level"] = it }
+        activityState?.let { body["activity_state"] = it.name.lowercase(Locale.US) }
         return post("/heart-rate", body, authenticated = true)
     }
 
@@ -171,12 +177,12 @@ object ApiService {
         when (response.code) {
             in 200..299 -> {
                 return try {
-                    gson.fromJson(bodyString, T::class.java)
-                } catch (e: Exception) {
-                    // Try as TypeToken for generic types (List, Map)
+                    // Decode with a full generic type first, so list/map responses are strongly typed.
+                    val type = object : TypeToken<T>() {}.type
+                    gson.fromJson<T>(bodyString, type)
+                } catch (_: Exception) {
                     try {
-                        val type = object : TypeToken<T>() {}.type
-                        gson.fromJson(bodyString, type)
+                        gson.fromJson(bodyString, T::class.java)
                     } catch (_: Exception) {
                         throw ApiException("Failed to process server response.")
                     }
@@ -184,6 +190,7 @@ object ApiService {
             }
             401 -> {
                 token = null
+                onAuthTokenExpired?.invoke()
                 throw ApiException("Session expired. Please log in again.")
             }
             else -> {

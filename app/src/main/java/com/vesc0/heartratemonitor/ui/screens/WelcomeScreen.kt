@@ -121,7 +121,7 @@ fun WelcomeScreen(
                     Button(
                         onClick = onRequestCameraPermission,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C))
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB71C1C), contentColor = Color.White)
                     ) {
                         Text("Enable Camera Access", fontWeight = FontWeight.SemiBold)
                     }

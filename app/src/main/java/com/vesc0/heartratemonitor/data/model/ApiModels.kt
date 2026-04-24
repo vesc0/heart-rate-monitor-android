@@ -7,6 +7,7 @@ import com.google.gson.annotations.SerializedName
 data class AuthTokenResponse(
     @SerializedName("access_token") val accessToken: String,
     @SerializedName("token_type") val tokenType: String,
+    val name: String?,
     val username: String?,
     val email: String?,
     val age: Int?,
@@ -14,22 +15,34 @@ data class AuthTokenResponse(
     val gender: String?,
     @SerializedName("height_cm") val heightCm: Int?,
     @SerializedName("weight_kg") val weightKg: Int?
-)
+) {
+    val resolvedName: String?
+        get() = name ?: username
+}
 
 data class RegisterResponse(
     val message: String,
-    val username: String
-)
+    val email: String?,
+    val name: String?,
+    val username: String?
+) {
+    val resolvedName: String?
+        get() = name ?: username
+}
 
 data class UserProfileResponse(
-    val username: String,
+    val name: String?,
+    val username: String?,
     val email: String,
     val age: Int?,
     @SerializedName("health_issues") val healthIssues: String?,
     val gender: String?,
     @SerializedName("height_cm") val heightCm: Int?,
     @SerializedName("weight_kg") val weightKg: Int?
-)
+) {
+    val resolvedName: String?
+        get() = name ?: username
+}
 
 // --- Heart rate ---
 
@@ -38,7 +51,8 @@ data class HeartRateEntryResponse(
     val bpm: Int,
     @SerializedName("recorded_at") val recordedAt: String,
     @SerializedName("created_at") val createdAt: String,
-    @SerializedName("stress_level") val stressLevel: String?
+    @SerializedName("stress_level") val stressLevel: String?,
+    @SerializedName("activity_state") val activityState: MeasurementState?
 )
 
 // --- Stress prediction ---

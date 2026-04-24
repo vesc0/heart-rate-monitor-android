@@ -24,7 +24,9 @@ fun HeartTimerView(
     secondsLeft: Int,
     totalSeconds: Int,
     heartSize: Dp = 96.dp,
-    color: Color = Color.Red
+    color: Color = Color.Red,
+    showHeart: Boolean = true,
+    heartIconScale: Float = 1.0f
 ) {
     val progress by animateFloatAsState(
         targetValue = if (totalSeconds > 0) secondsLeft.toFloat() / totalSeconds else 0f,
@@ -65,12 +67,13 @@ fun HeartTimerView(
             )
         }
 
-        // Heart icon
-        Icon(
-            imageVector = Icons.Filled.Favorite,
-            contentDescription = "Heart",
-            tint = Color.Red,
-            modifier = Modifier.size(heartSize * animatedScale)
-        )
+        if (showHeart) {
+            Icon(
+                imageVector = Icons.Filled.Favorite,
+                contentDescription = "Heart",
+                tint = Color.Red,
+                modifier = Modifier.size(heartSize * heartIconScale * animatedScale)
+            )
+        }
     }
 }

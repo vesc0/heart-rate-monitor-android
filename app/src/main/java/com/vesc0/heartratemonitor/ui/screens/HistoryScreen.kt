@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,12 +24,19 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vesc0.heartratemonitor.data.model.HeartRateEntry
+import com.vesc0.heartratemonitor.data.model.MeasurementState
+import com.vesc0.heartratemonitor.ui.theme.buttonTextColor
 import com.vesc0.heartratemonitor.viewmodel.HeartRateViewModel
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.max
+import kotlin.math.min
 
 private enum class HistoryMetric { HEART_RATE, STRESS }
 
@@ -43,10 +51,11 @@ private data class DailyMetricRange(
 @Composable
 fun HistoryScreen(vm: HeartRateViewModel) {
     val log by vm.log.collectAsState()
+    val pageSize = 20
     var metricMode by remember { mutableStateOf(HistoryMetric.HEART_RATE) }
     var monthOffset by remember { mutableIntStateOf(0) }
     var selectedDay by remember { mutableStateOf<Long?>(null) }
-    var visibleCount by remember { mutableIntStateOf(5) }
+    var visibleCount by remember { mutableIntStateOf(pageSize) }
     var isSelectionMode by remember { mutableStateOf(false) }
     var selectedEntries by remember { mutableStateOf(setOf<String>()) }
 
@@ -135,6 +144,7 @@ fun HistoryScreen(vm: HeartRateViewModel) {
     val currentDailyRanges = remember(monthDays, dailyRangesMap) {
         monthDays.mapNotNull { dailyRangesMap[it] }
     }
+    val hasDataInPeriod = currentDailyRanges.isNotEmpty()
 
     fun periodStats(ranges: List<DailyMetricRange>): Triple<Int, Int, Int>? {
         if (ranges.isEmpty()) return null
@@ -184,7 +194,8 @@ fun HistoryScreen(vm: HeartRateViewModel) {
         if (selectedDay != null) {
             "Measurements - ${SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(Date(selectedDay!!))}"
         } else {
-            "Measurements - $periodTitle"
+            val (start, _) = monthRange()
+            "Measurements - ${SimpleDateFormat("MMM yyyy", Locale.getDefault()).format(Date(start))}"
         }
     }
 
@@ -207,18 +218,13 @@ fun HistoryScreen(vm: HeartRateViewModel) {
                     textAlign = TextAlign.Center,
                     modifier = Modifier.padding(horizontal = 32.dp)
                 )
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                    onClick = { vm.seedSampleData() },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-                ) { Text("Load Demo Data") }
             }
         } else {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding),
-                contentPadding = PaddingValues(horizontal = 12.dp)
+                contentPadding = PaddingValues(horizontal = 16.dp)
             ) {
                 item {
                     SingleChoiceSegmentedButtonRow(
@@ -232,12 +238,14 @@ fun HistoryScreen(vm: HeartRateViewModel) {
                                 metricMode = HistoryMetric.HEART_RATE
                                 monthOffset = 0
                                 selectedDay = null
+                                visibleCount = pageSize
                             },
                             shape = SegmentedButtonDefaults.itemShape(0, 2),
                             colors = SegmentedButtonDefaults.colors(
-                                activeContainerColor = MaterialTheme.colorScheme.primary,
-                                activeContentColor = MaterialTheme.colorScheme.onPrimary
-                            )
+                                activeContainerColor = Color.Red,
+                                activeContentColor = Color.White
+                            ),
+                            icon = {}
                         ) { Text("Heart Rate") }
                         SegmentedButton(
                             selected = metricMode == HistoryMetric.STRESS,
@@ -245,12 +253,14 @@ fun HistoryScreen(vm: HeartRateViewModel) {
                                 metricMode = HistoryMetric.STRESS
                                 monthOffset = 0
                                 selectedDay = null
+                                visibleCount = pageSize
                             },
                             shape = SegmentedButtonDefaults.itemShape(1, 2),
                             colors = SegmentedButtonDefaults.colors(
-                                activeContainerColor = MaterialTheme.colorScheme.primary,
-                                activeContentColor = MaterialTheme.colorScheme.onPrimary
-                            )
+                                activeContainerColor = Color.Red,
+                                activeContentColor = Color.White
+                            ),
+                            icon = {}
                         ) { Text("Stress") }
                     }
                 }
@@ -265,6 +275,7 @@ fun HistoryScreen(vm: HeartRateViewModel) {
                         IconButton(onClick = {
                             monthOffset--
                             selectedDay = null
+                            visibleCount = pageSize
                         }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Previous")
                         }
@@ -276,6 +287,7 @@ fun HistoryScreen(vm: HeartRateViewModel) {
                             onClick = {
                                 monthOffset++
                                 selectedDay = null
+                                visibleCount = pageSize
                             },
                             enabled = canGoForward
                         ) {
@@ -290,108 +302,115 @@ fun HistoryScreen(vm: HeartRateViewModel) {
                 }
 
                 item {
-                    Text(
-                        if (metricMode == HistoryMetric.HEART_RATE) "Heart Rate (Monthly)" else "Stress (Monthly)",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp,
-                        modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
-                    )
+                    if (currentDailyRanges.isEmpty()) {
+                        Text(
+                            text = "No data in this period.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp)
+                        )
+                    } else {
+                        MetricRangeChart(
+                            data = currentDailyRanges,
+                            allDays = monthDays,
+                            metricMode = metricMode,
+                            selectedDay = selectedDay,
+                            onDaySelected = { day ->
+                                selectedDay = if (selectedDay == day) null else day
+                                visibleCount = pageSize
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(220.dp)
+                                .padding(vertical = 8.dp)
+                        )
+                    }
                 }
 
-                item {
-                    MetricRangeChart(
-                        data = currentDailyRanges,
-                        allDays = monthDays,
-                        selectedDay = selectedDay,
-                        onDaySelected = { day ->
-                            selectedDay = if (selectedDay == day) null else day
-                            visibleCount = 5
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(220.dp)
-                            .padding(vertical = 8.dp)
-                    )
-                }
-
-                if (stats != null) {
+                if (hasDataInPeriod && stats != null) {
                     item {
                         val (min, avg, max) = stats!!
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            StatPill("Min", min, metricMode)
-                            StatPill("Avg", avg, metricMode)
-                            StatPill("Max", max, metricMode)
+                            StatPill("Min", min, metricMode, modifier = Modifier.weight(1f))
+                            StatPill("Avg", avg, metricMode, modifier = Modifier.weight(1f))
+                            StatPill("Max", max, metricMode, modifier = Modifier.weight(1f))
                         }
                     }
                 }
 
-                item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 16.dp, bottom = 4.dp)
-                    ) {
-                        Text(measurementHeaderTitle, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            if (isSelectionMode) {
-                                TextButton(onClick = {
-                                    isSelectionMode = false
-                                    selectedEntries = emptySet()
-                                }) { Text("Cancel") }
-                                TextButton(onClick = {
-                                    selectedEntries = filteredMeasurements.map { it.id }.toSet()
-                                }) { Text("Select All") }
-                                TextButton(
-                                    onClick = {
-                                        vm.deleteEntries(selectedEntries)
-                                        isSelectionMode = false
-                                        selectedEntries = emptySet()
-                                    },
-                                    enabled = selectedEntries.isNotEmpty()
-                                ) {
-                                    Text("Delete", color = if (selectedEntries.isNotEmpty()) Color.Red else Color.Gray)
-                                }
-                            } else {
-                                TextButton(onClick = { isSelectionMode = true }) { Text("Select") }
-                            }
-                        }
-                    }
-                }
-
-                itemsIndexed(pagedLog, key = { _, e -> e.id }) { _, entry ->
-                    MeasurementRow(
-                        entry = entry,
-                        isSelectionMode = isSelectionMode,
-                        isSelected = entry.id in selectedEntries,
-                        onClick = {
-                            if (isSelectionMode) {
-                                selectedEntries = if (entry.id in selectedEntries)
-                                    selectedEntries - entry.id else selectedEntries + entry.id
-                            }
-                        }
-                    )
-                    HorizontalDivider()
-                }
-
-                if (hasMore) {
+                if (hasDataInPeriod) {
                     item {
-                        Button(
-                            onClick = { visibleCount += 5 },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 8.dp)
-                        ) { Text("Show more", fontWeight = FontWeight.SemiBold) }
+                                .padding(top = 16.dp, bottom = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = measurementHeaderTitle,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(2.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (isSelectionMode) {
+                                    HeaderActionButton(label = "Cancel", onClick = {
+                                        isSelectionMode = false
+                                        selectedEntries = emptySet()
+                                    })
+                                    HeaderActionButton(label = "Select All", onClick = {
+                                        selectedEntries = filteredMeasurements.map { it.id }.toSet()
+                                    })
+                                    HeaderActionButton(
+                                        label = "Delete",
+                                        onClick = {
+                                            vm.deleteEntries(selectedEntries)
+                                            isSelectionMode = false
+                                            selectedEntries = emptySet()
+                                        },
+                                        enabled = selectedEntries.isNotEmpty(),
+                                        emphasize = true
+                                    )
+                                } else {
+                                    HeaderActionButton(label = "Select", onClick = { isSelectionMode = true })
+                                }
+                            }
+                        }
+                    }
+
+                    itemsIndexed(pagedLog, key = { _, e -> e.id }) { index, entry ->
+                        if (hasMore && index == pagedLog.lastIndex) {
+                            LaunchedEffect(entry.id, visibleCount, filteredMeasurements.size) {
+                                visibleCount = minOf(visibleCount + pageSize, filteredMeasurements.size)
+                            }
+                        }
+
+                        MeasurementRow(
+                            entry = entry,
+                            isSelectionMode = isSelectionMode,
+                            isSelected = entry.id in selectedEntries,
+                            onClick = {
+                                if (isSelectionMode) {
+                                    selectedEntries = if (entry.id in selectedEntries)
+                                        selectedEntries - entry.id else selectedEntries + entry.id
+                                }
+                            }
+                        )
+                        HorizontalDivider()
                     }
                 }
             }
@@ -403,6 +422,7 @@ fun HistoryScreen(vm: HeartRateViewModel) {
 private fun MetricRangeChart(
     data: List<DailyMetricRange>,
     allDays: List<Long>,
+    metricMode: HistoryMetric,
     selectedDay: Long?,
     onDaySelected: (Long) -> Unit,
     modifier: Modifier = Modifier
@@ -417,7 +437,10 @@ private fun MetricRangeChart(
                 val barSpacing = chartW / allDays.size
                 val tappedIdx = ((offset.x - leftPad) / barSpacing).toInt()
                 if (tappedIdx in allDays.indices) {
-                    onDaySelected(allDays[tappedIdx])
+                    val day = allDays[tappedIdx]
+                    if (data.any { it.dayMillis == day }) {
+                        onDaySelected(day)
+                    }
                 }
             }
         }
@@ -431,13 +454,59 @@ private fun MetricRangeChart(
 
         if (data.isEmpty() || allDays.isEmpty()) return@Canvas
 
-        val allMin = data.minOf { it.min }.coerceAtLeast(0)
-        val allMax = data.maxOf { it.max }.coerceAtMost(200)
-        val yMin = (allMin - 10).coerceAtLeast(0)
-        val yMax = allMax + 10
+        val minDataValue = data.minOf { it.min }.toDouble()
+        val maxDataValue = data.maxOf { it.max }.toDouble()
 
-        fun yPos(value: Int): Float =
-            topPad + chartH * (1 - (value - yMin).toFloat() / (yMax - yMin).coerceAtLeast(1))
+        val yMin: Double
+        val yMax: Double
+        if (metricMode == HistoryMetric.HEART_RATE) {
+            val lowerDynamic = floor((minDataValue - 6.0) / 5.0) * 5.0
+            val upperDynamic = ceil((maxDataValue + 8.0) / 5.0) * 5.0
+            yMin = min(40.0, lowerDynamic)
+            yMax = max(120.0, upperDynamic)
+        } else {
+            yMin = 0.0
+            yMax = 100.0
+        }
+
+        fun yPos(value: Double): Float =
+            topPad + chartH * (1 - ((value - yMin) / (yMax - yMin).coerceAtLeast(1.0)).toFloat())
+
+        // Background ranges similar to iOS chart bands.
+        if (metricMode == HistoryMetric.HEART_RATE) {
+            fun drawBand(start: Double, end: Double, color: Color) {
+                val bandStart = max(start, yMin)
+                val bandEnd = min(end, yMax)
+                if (bandEnd <= bandStart) return
+                val top = yPos(bandEnd)
+                val bottom = yPos(bandStart)
+                drawRect(
+                    color = color,
+                    topLeft = Offset(leftPad, top),
+                    size = androidx.compose.ui.geometry.Size(chartW, bottom - top)
+                )
+            }
+
+            drawBand(yMin, 50.0, Color.Red.copy(alpha = 0.14f))
+            drawBand(50.0, 60.0, Color(0xFFFFEB3B).copy(alpha = 0.14f))
+            drawBand(60.0, 100.0, Color(0xFF4CAF50).copy(alpha = 0.14f))
+            drawBand(100.0, 110.0, Color(0xFFFFEB3B).copy(alpha = 0.14f))
+            drawBand(110.0, yMax, Color.Red.copy(alpha = 0.14f))
+        } else {
+            fun drawBand(start: Double, end: Double, color: Color) {
+                val top = yPos(end)
+                val bottom = yPos(start)
+                drawRect(
+                    color = color,
+                    topLeft = Offset(leftPad, top),
+                    size = androidx.compose.ui.geometry.Size(chartW, bottom - top)
+                )
+            }
+
+            drawBand(0.0, 40.0, Color(0xFF4CAF50).copy(alpha = 0.14f))
+            drawBand(40.0, 70.0, Color(0xFFFFEB3B).copy(alpha = 0.14f))
+            drawBand(70.0, 100.0, Color.Red.copy(alpha = 0.14f))
+        }
 
         val dataMap = data.associateBy { it.dayMillis }
 
@@ -451,8 +520,8 @@ private fun MetricRangeChart(
 
             drawLine(
                 color = barColor.copy(alpha = alpha),
-                start = Offset(x, yPos(range.max)),
-                end = Offset(x, yPos(range.min)),
+                start = Offset(x, yPos(range.max.toDouble())),
+                end = Offset(x, yPos(range.min.toDouble())),
                 strokeWidth = width,
                 cap = StrokeCap.Round
             )
@@ -463,9 +532,15 @@ private fun MetricRangeChart(
             color = android.graphics.Color.GRAY
             textAlign = android.graphics.Paint.Align.LEFT
         }
-        listOf(yMin, (yMin + yMax) / 2, yMax).forEach { value ->
+        val yAxisValues = if (metricMode == HistoryMetric.STRESS) {
+            listOf(0.0, 40.0, 70.0, 100.0)
+        } else {
+            listOf(yMin, (yMin + yMax) / 2.0, yMax)
+        }
+
+        yAxisValues.forEach { value ->
             drawContext.canvas.nativeCanvas.drawText(
-                "$value", size.width - rightPad + 4, yPos(value) + 10, paint
+                "${value.toInt()}", size.width - rightPad + 4, yPos(value) + 10, paint
             )
         }
 
@@ -486,14 +561,24 @@ private fun MetricRangeChart(
 }
 
 @Composable
-private fun StatPill(title: String, value: Int, metricMode: HistoryMetric) {
+private fun StatPill(
+    title: String,
+    value: Int,
+    metricMode: HistoryMetric,
+    modifier: Modifier = Modifier
+) {
+    val valueColor = metricValueColor(value, metricMode)
     Surface(
-        shape = RoundedCornerShape(50),
+        modifier = modifier.height(74.dp),
+        shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
         tonalElevation = 1.dp
     ) {
         Column(
-            modifier = Modifier.padding(vertical = 8.dp, horizontal = 16.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = 8.dp, horizontal = 8.dp),
+            verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
@@ -504,9 +589,59 @@ private fun StatPill(title: String, value: Int, metricMode: HistoryMetric) {
             )
             Text(
                 if (metricMode == HistoryMetric.HEART_RATE) "$value BPM" else "$value%",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold
+                fontSize = 16.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = valueColor
             )
+        }
+    }
+}
+
+@Composable
+private fun HeaderActionButton(
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    emphasize: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val textColor = when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        emphasize -> buttonTextColor()
+        else -> buttonTextColor()
+    }
+
+    TextButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.heightIn(min = 30.dp),
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+    ) {
+        Text(
+            text = label,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = textColor,
+            maxLines = 1
+        )
+    }
+}
+
+private fun heartRateBandColor(value: Int): Color {
+    return when (value) {
+        in 60..100 -> Color(0xFF4CAF50)
+        in 50..59, in 101..110 -> Color(0xFFFFEB3B)
+        else -> Color.Red
+    }
+}
+
+private fun metricValueColor(value: Int, metricMode: HistoryMetric): Color {
+    return when (metricMode) {
+        HistoryMetric.HEART_RATE -> heartRateBandColor(value)
+        HistoryMetric.STRESS -> when {
+            value >= 70 -> Color.Red
+            value >= 40 -> Color(0xFFFF9800)
+            else -> Color(0xFF4CAF50)
         }
     }
 }
@@ -525,7 +660,7 @@ private fun MeasurementRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(enabled = isSelectionMode) { onClick() }
-            .padding(vertical = 10.dp, horizontal = 4.dp),
+            .padding(vertical = 10.dp, horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (isSelectionMode) {
@@ -539,7 +674,24 @@ private fun MeasurementRow(
         }
 
         Column(modifier = Modifier.weight(1f)) {
-            Text("${entry.bpm} BPM", fontWeight = FontWeight.SemiBold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.Favorite,
+                    contentDescription = null,
+                    tint = Color.Red,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("${entry.bpm} BPM", fontWeight = FontWeight.SemiBold)
+            }
+            entry.activityState?.let { state ->
+                Text(
+                    text = state.displayName,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = activityStateColorFor(state)
+                )
+            }
             entry.stressLevel?.let {
                 Text(
                     stressDisplayTextFor(it),
@@ -554,6 +706,14 @@ private fun MeasurementRow(
             Text(dateFmt.format(Date(entry.date)), fontSize = 14.sp)
             Text(timeFmt.format(Date(entry.date)), fontSize = 12.sp, color = Color.Gray)
         }
+    }
+}
+
+private fun activityStateColorFor(state: MeasurementState): Color {
+    return when (state) {
+        MeasurementState.RESTING -> Color(0xFF1976D2)
+        MeasurementState.ACTIVITY -> Color(0xFFFF9800)
+        MeasurementState.RECOVERY -> Color(0xFF26A69A)
     }
 }
 

@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.core.content.ContextCompat
 import com.vesc0.heartratemonitor.data.local.PreferencesManager
 import com.vesc0.heartratemonitor.ui.navigation.AppNavigation
@@ -24,7 +25,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            HeartRateMonitorTheme(dynamicColor = false) {
+            var appTheme by remember { mutableStateOf(PreferencesManager.appTheme) }
+            val systemDark = isSystemInDarkTheme()
+            val darkTheme = when (appTheme) {
+                "light" -> false
+                "dark" -> true
+                else -> systemDark
+            }
+
+            HeartRateMonitorTheme(darkTheme = darkTheme, dynamicColor = false) {
                 var showWelcome by remember { mutableStateOf(!PreferencesManager.hasSeenWelcome) }
                 var hasCameraPermission by remember {
                     mutableStateOf(
@@ -65,7 +74,13 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 } else {
-                    AppNavigation()
+                    AppNavigation(
+                        appTheme = appTheme,
+                        onAppThemeChange = { newTheme ->
+                            appTheme = newTheme
+                            PreferencesManager.appTheme = newTheme
+                        }
+                    )
                 }
             }
         }

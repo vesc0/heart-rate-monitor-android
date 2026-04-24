@@ -24,6 +24,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.vesc0.heartratemonitor.data.local.PreferencesManager
+import com.vesc0.heartratemonitor.ui.theme.buttonTextColor
 import com.vesc0.heartratemonitor.viewmodel.AuthViewModel
 import kotlinx.coroutines.launch
 
@@ -32,12 +34,16 @@ import kotlinx.coroutines.launch
 fun ProfileScreen(auth: AuthViewModel) {
     val isSignedIn by auth.isSignedIn.collectAsState()
     val email by auth.currentEmail.collectAsState()
-    val username by auth.username.collectAsState()
+    val name by auth.name.collectAsState()
     val age by auth.age.collectAsState()
     val healthIssues by auth.healthIssues.collectAsState()
     val gender by auth.gender.collectAsState()
     val heightCm by auth.heightCm.collectAsState()
     val weightKg by auth.weightKg.collectAsState()
+
+    var unitSystem by remember {
+        mutableStateOf(ProfileUnitSystem.fromRaw(PreferencesManager.profileUnitSystem))
+    }
 
     var showAuthSheet by remember { mutableStateOf(false) }
     var selectedAuthTab by remember { mutableIntStateOf(0) }
@@ -64,13 +70,18 @@ fun ProfileScreen(auth: AuthViewModel) {
                     .padding(horizontal = 16.dp)
             ) {
                 SignedInContent(
-                    username = username,
+                    name = name,
                     email = email,
                     age = age,
                     healthIssues = healthIssues,
                     gender = gender,
                     heightCm = heightCm,
                     weightKg = weightKg,
+                    unitSystem = unitSystem,
+                    onUnitSystemChange = {
+                        unitSystem = it
+                        PreferencesManager.profileUnitSystem = it.raw
+                    },
                     profileError = profileError,
                     onEdit = { editingField = it },
                     onSignOut = { auth.signOut() }
@@ -94,8 +105,10 @@ fun ProfileScreen(auth: AuthViewModel) {
 
     // Auth bottom sheet
     if (showAuthSheet) {
+        val authSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
-            onDismissRequest = { showAuthSheet = false }
+            onDismissRequest = { showAuthSheet = false },
+            sheetState = authSheetState
         ) {
             AuthSheetContent(
                 auth = auth,
@@ -108,7 +121,7 @@ fun ProfileScreen(auth: AuthViewModel) {
     // Edit field dialog
     editingField?.let { field ->
         val currentValue = when (field) {
-            EditableField.NAME -> username ?: ""
+            EditableField.NAME -> name ?: ""
             EditableField.EMAIL -> email ?: ""
             EditableField.AGE -> age ?: ""
             EditableField.GENDER -> gender ?: ""
@@ -124,7 +137,7 @@ fun ProfileScreen(auth: AuthViewModel) {
                 scope.launch {
                     try {
                         when (field) {
-                            EditableField.NAME -> auth.updateProfile(username = newValue)
+                            EditableField.NAME -> auth.updateProfile(name = newValue)
                             EditableField.EMAIL -> auth.updateProfile(email = newValue)
                             EditableField.AGE -> auth.updateProfile(age = newValue.toIntOrNull())
                             EditableField.GENDER -> auth.updateProfile(gender = newValue.lowercase())
@@ -205,13 +218,15 @@ private fun SignedOutContent(onShowAuth: () -> Unit) {
 
 @Composable
 private fun SignedInContent(
-    username: String?,
+    name: String?,
     email: String?,
     age: String?,
     healthIssues: String?,
     gender: String?,
     heightCm: String?,
     weightKg: String?,
+    unitSystem: ProfileUnitSystem,
+    onUnitSystemChange: (ProfileUnitSystem) -> Unit,
     profileError: String?,
     onEdit: (EditableField) -> Unit,
     onSignOut: () -> Unit
@@ -241,7 +256,7 @@ private fun SignedInContent(
             }
             Spacer(modifier = Modifier.height(14.dp))
             Text(
-                if (username.isNullOrEmpty()) "Your Name" else username,
+                if (name.isNullOrEmpty()) "Your Name" else name,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -260,13 +275,44 @@ private fun SignedInContent(
         modifier = Modifier.padding(start = 6.dp, bottom = 8.dp)
     )
 
+    SingleChoiceSegmentedButtonRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 10.dp)
+    ) {
+        SegmentedButton(
+            selected = unitSystem == ProfileUnitSystem.METRIC,
+            onClick = { onUnitSystemChange(ProfileUnitSystem.METRIC) },
+            shape = SegmentedButtonDefaults.itemShape(0, 2),
+            colors = SegmentedButtonDefaults.colors(
+                activeContainerColor = Color.Red,
+                activeContentColor = Color.White
+            ),
+            icon = {}
+        ) {
+            Text("Metric")
+        }
+        SegmentedButton(
+            selected = unitSystem == ProfileUnitSystem.IMPERIAL,
+            onClick = { onUnitSystemChange(ProfileUnitSystem.IMPERIAL) },
+            shape = SegmentedButtonDefaults.itemShape(1, 2),
+            colors = SegmentedButtonDefaults.colors(
+                activeContainerColor = Color.Red,
+                activeContentColor = Color.White
+            ),
+            icon = {}
+        ) {
+            Text("Imperial")
+        }
+    }
+
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
         tonalElevation = 1.dp
     ) {
         Column {
-            ProfileRow(Icons.Filled.Person, "Name", username ?: "", onClick = { onEdit(EditableField.NAME) })
+            ProfileRow(Icons.Filled.Person, "Name", name ?: "", onClick = { onEdit(EditableField.NAME) })
             HorizontalDivider(modifier = Modifier.padding(start = 48.dp))
             ProfileRow(Icons.Filled.Email, "Email", email ?: "", onClick = { onEdit(EditableField.EMAIL) })
             HorizontalDivider(modifier = Modifier.padding(start = 48.dp))
@@ -274,9 +320,19 @@ private fun SignedInContent(
             HorizontalDivider(modifier = Modifier.padding(start = 48.dp))
             ProfileRow(Icons.Filled.Person, "Gender", gender ?: "", onClick = { onEdit(EditableField.GENDER) })
             HorizontalDivider(modifier = Modifier.padding(start = 48.dp))
-            ProfileRow(Icons.Filled.Straighten, "Height (cm)", heightCm ?: "", onClick = { onEdit(EditableField.HEIGHT) })
+            ProfileRow(
+                Icons.Filled.Straighten,
+                "Height",
+                displayedHeight(heightCm, unitSystem),
+                onClick = { onEdit(EditableField.HEIGHT) }
+            )
             HorizontalDivider(modifier = Modifier.padding(start = 48.dp))
-            ProfileRow(Icons.Filled.FitnessCenter, "Weight (kg)", weightKg ?: "", onClick = { onEdit(EditableField.WEIGHT) })
+            ProfileRow(
+                Icons.Filled.FitnessCenter,
+                "Weight",
+                displayedWeight(weightKg, unitSystem),
+                onClick = { onEdit(EditableField.WEIGHT) }
+            )
             HorizontalDivider(modifier = Modifier.padding(start = 48.dp))
             ProfileRow(Icons.Filled.HealthAndSafety, "Health", healthIssues ?: "", onClick = { onEdit(EditableField.HEALTH) })
         }
@@ -292,7 +348,7 @@ private fun SignedInContent(
     // Sign out
     OutlinedButton(
         onClick = onSignOut,
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = buttonTextColor()),
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -351,25 +407,35 @@ private fun AuthSheetContent(
 ) {
     var tab by remember { mutableIntStateOf(selectedTab) }
 
-    Column(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 32.dp)) {
+    Column(
+        modifier = Modifier
+            .heightIn(max = 620.dp)
+            .verticalScroll(rememberScrollState())
+            .imePadding()
+            .navigationBarsPadding()
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 32.dp)
+    ) {
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             SegmentedButton(
                 selected = tab == 0,
                 onClick = { tab = 0; onTabChange(0) },
                 shape = SegmentedButtonDefaults.itemShape(0, 2),
                 colors = SegmentedButtonDefaults.colors(
-                    activeContainerColor = MaterialTheme.colorScheme.primary,
-                    activeContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                    activeContainerColor = Color.Red,
+                    activeContentColor = Color.White
+                ),
+                icon = {}
             ) { Text("Log In") }
             SegmentedButton(
                 selected = tab == 1,
                 onClick = { tab = 1; onTabChange(1) },
                 shape = SegmentedButtonDefaults.itemShape(1, 2),
                 colors = SegmentedButtonDefaults.colors(
-                    activeContainerColor = MaterialTheme.colorScheme.primary,
-                    activeContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                    activeContainerColor = Color.Red,
+                    activeContentColor = Color.White
+                ),
+                icon = {}
             ) { Text("Sign Up") }
         }
 
@@ -386,6 +452,7 @@ private fun LoginContent(auth: AuthViewModel) {
     var showPassword by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var errorText by remember { mutableStateOf<String?>(null) }
+    val isLoginDisabled = isLoading || email.trim().isEmpty() || password.trim().isEmpty()
     val scope = rememberCoroutineScope()
 
     Column {
@@ -437,8 +504,8 @@ private fun LoginContent(auth: AuthViewModel) {
                     isLoading = false
                 }
             },
-            enabled = !isLoading,
-            colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+            enabled = !isLoginDisabled,
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Red, contentColor = Color.White),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -484,7 +551,7 @@ private fun SignUpContent(auth: AuthViewModel) {
         OutlinedTextField(
             value = password,
             onValueChange = { password = it },
-            label = { Text("Password (min 6 characters)") },
+            label = { Text("Password (min 8, Aa1)") },
             singleLine = true,
             shape = RoundedCornerShape(14.dp),
             visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
@@ -529,7 +596,7 @@ private fun SignUpContent(auth: AuthViewModel) {
                 }
             },
             enabled = canSubmit,
-            colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Red, contentColor = Color.White),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -546,6 +613,39 @@ private fun SignUpContent(auth: AuthViewModel) {
 // ───────────────────── Edit field dialog ──────────────────────
 
 private enum class EditableField { NAME, EMAIL, AGE, GENDER, HEIGHT, WEIGHT, HEALTH }
+
+private enum class ProfileUnitSystem(val raw: String) {
+    METRIC("metric"),
+    IMPERIAL("imperial");
+
+    companion object {
+        fun fromRaw(value: String): ProfileUnitSystem {
+            return entries.firstOrNull { it.raw == value } ?: METRIC
+        }
+    }
+}
+
+private fun displayedHeight(heightCm: String?, unitSystem: ProfileUnitSystem): String {
+    val cm = heightCm?.toIntOrNull() ?: return ""
+    return if (unitSystem == ProfileUnitSystem.METRIC) {
+        "$cm cm"
+    } else {
+        val totalInches = (cm / 2.54).toInt()
+        val feet = totalInches / 12
+        val inches = totalInches % 12
+        "$feet ft $inches in"
+    }
+}
+
+private fun displayedWeight(weightKg: String?, unitSystem: ProfileUnitSystem): String {
+    val kg = weightKg?.toIntOrNull() ?: return ""
+    return if (unitSystem == ProfileUnitSystem.METRIC) {
+        "$kg kg"
+    } else {
+        val lb = (kg * 2.2046226218).toInt()
+        "$lb lb"
+    }
+}
 
 @Composable
 private fun EditFieldDialog(
@@ -584,12 +684,18 @@ private fun EditFieldDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = { onSave(draft) }) {
+            TextButton(
+                onClick = { onSave(draft) },
+                colors = ButtonDefaults.textButtonColors(contentColor = buttonTextColor())
+            ) {
                 Text("Done", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(
+                onClick = onDismiss,
+                colors = ButtonDefaults.textButtonColors(contentColor = buttonTextColor())
+            ) { Text("Cancel") }
         }
     )
 }

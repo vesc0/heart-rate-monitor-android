@@ -13,37 +13,39 @@ class AuthViewModel : ViewModel() {
 
     private val api = ApiService
 
-    // --- Published state ---
-
-    private val _isSignedIn = MutableStateFlow(PreferencesManager.isAuthenticated)
+    private val _isSignedIn = MutableStateFlow(api.isAuthenticated)
     val isSignedIn = _isSignedIn.asStateFlow()
 
-    private val _currentEmail = MutableStateFlow(PreferencesManager.email)
+    private val _currentEmail = MutableStateFlow(if (api.isAuthenticated) PreferencesManager.email else null)
     val currentEmail = _currentEmail.asStateFlow()
 
-    private val _username = MutableStateFlow(PreferencesManager.username)
-    val username = _username.asStateFlow()
+    private val _name = MutableStateFlow(if (api.isAuthenticated) PreferencesManager.name else null)
+    val name = _name.asStateFlow()
 
-    private val _age = MutableStateFlow(PreferencesManager.age)
+    private val _age = MutableStateFlow(if (api.isAuthenticated) PreferencesManager.age else null)
     val age = _age.asStateFlow()
 
-    private val _healthIssues = MutableStateFlow(PreferencesManager.healthIssues)
-    val healthIssues = _healthIssues.asStateFlow()
-
-    private val _gender = MutableStateFlow(PreferencesManager.gender)
+    private val _gender = MutableStateFlow(if (api.isAuthenticated) PreferencesManager.gender else null)
     val gender = _gender.asStateFlow()
 
-    private val _heightCm = MutableStateFlow(PreferencesManager.heightCm)
+    private val _heightCm = MutableStateFlow(if (api.isAuthenticated) PreferencesManager.heightCm else null)
     val heightCm = _heightCm.asStateFlow()
 
-    private val _weightKg = MutableStateFlow(PreferencesManager.weightKg)
+    private val _weightKg = MutableStateFlow(if (api.isAuthenticated) PreferencesManager.weightKg else null)
     val weightKg = _weightKg.asStateFlow()
 
-    // --- Auth actions ---
+    private val _healthIssues = MutableStateFlow(if (api.isAuthenticated) PreferencesManager.healthIssues else null)
+    val healthIssues = _healthIssues.asStateFlow()
+
+    init {
+        ApiService.onAuthTokenExpired = {
+            handleTokenExpired()
+        }
+    }
 
     suspend fun signUp(email: String, password: String) {
         validateEmail(email)
-        if (password.length < 6) throw AuthError("Password should be at least 6 characters.")
+        validatePassword(password)
 
         try {
             api.register(email, password)
@@ -56,7 +58,7 @@ class AuthViewModel : ViewModel() {
 
     suspend fun signIn(email: String, password: String) {
         validateEmail(email)
-        if (password.isEmpty()) throw AuthError("Password cannot be empty.")
+        if (password.isBlank()) throw AuthError("Password cannot be empty.")
 
         try {
             val response = api.login(email, password)
@@ -70,87 +72,121 @@ class AuthViewModel : ViewModel() {
         api.logout()
         _isSignedIn.value = false
         _currentEmail.value = null
-        _username.value = null
+        _name.value = null
         _age.value = null
-        _healthIssues.value = null
         _gender.value = null
         _heightCm.value = null
         _weightKg.value = null
-        PreferencesManager.clearProfile()
+        _healthIssues.value = null
+        clearPersistedProfile()
     }
-
-    // --- Profile ---
 
     fun fetchProfile() {
         if (!api.isAuthenticated) return
         viewModelScope.launch {
             try {
                 val profile = api.fetchProfile()
-                _username.value = profile.username
+                _name.value = profile.resolvedName
                 _currentEmail.value = profile.email
                 _age.value = profile.age?.toString()
-                _healthIssues.value = profile.healthIssues
                 _gender.value = profile.gender
                 _heightCm.value = profile.heightCm?.toString()
                 _weightKg.value = profile.weightKg?.toString()
+                _healthIssues.value = profile.healthIssues
                 persistProfile()
-            } catch (_: Exception) { }
+            } catch (_: Exception) {
+                // Keep current local profile if the request fails.
+            }
         }
     }
 
     suspend fun updateProfile(
-        username: String? = null,
+        name: String? = null,
         email: String? = null,
         age: Int? = null,
-        healthIssues: String? = null,
         gender: String? = null,
         heightCm: Int? = null,
-        weightKg: Int? = null
+        weightKg: Int? = null,
+        healthIssues: String? = null
     ) {
         if (!api.isAuthenticated) return
+
         try {
-            val updated = api.updateProfile(username, email, age, healthIssues, gender, heightCm, weightKg)
-            _username.value = updated.username
+            val updated = api.updateProfile(
+                name = name,
+                email = email,
+                age = age,
+                gender = gender,
+                heightCm = heightCm,
+                weightKg = weightKg,
+                healthIssues = healthIssues
+            )
+            _name.value = updated.resolvedName
             _currentEmail.value = updated.email
             _age.value = updated.age?.toString()
-            _healthIssues.value = updated.healthIssues
             _gender.value = updated.gender
             _heightCm.value = updated.heightCm?.toString()
             _weightKg.value = updated.weightKg?.toString()
+            _healthIssues.value = updated.healthIssues
             persistProfile()
         } catch (e: ApiService.ApiException) {
             throw AuthError(e.message ?: "Update failed.")
         }
     }
 
-    // --- Helpers ---
-
     private fun applyLoginResponse(response: AuthTokenResponse, fallbackEmail: String) {
         _currentEmail.value = response.email ?: fallbackEmail
-        _username.value = response.username
+        _name.value = response.resolvedName
         _age.value = response.age?.toString()
-        _healthIssues.value = response.healthIssues
         _gender.value = response.gender
         _heightCm.value = response.heightCm?.toString()
         _weightKg.value = response.weightKg?.toString()
+        _healthIssues.value = response.healthIssues
         _isSignedIn.value = true
         persistProfile()
     }
 
     private fun persistProfile() {
         PreferencesManager.email = _currentEmail.value
-        PreferencesManager.username = _username.value
+        PreferencesManager.name = _name.value
         PreferencesManager.age = _age.value
-        PreferencesManager.healthIssues = _healthIssues.value
         PreferencesManager.gender = _gender.value
         PreferencesManager.heightCm = _heightCm.value
         PreferencesManager.weightKg = _weightKg.value
+        PreferencesManager.healthIssues = _healthIssues.value
+    }
+
+    private fun clearPersistedProfile() {
+        PreferencesManager.clearProfile()
+    }
+
+    private fun handleTokenExpired() {
+        if (_isSignedIn.value) {
+            signOut()
+        }
     }
 
     private fun validateEmail(email: String) {
         if (!email.contains("@") || !email.contains(".") || email.length < 5) {
             throw AuthError("Please enter a valid email address.")
         }
+    }
+
+    private fun validatePassword(password: String) {
+        if (password.length < 8) {
+            throw AuthError("Password must be at least 8 characters and include uppercase, lowercase, and a number.")
+        }
+        val hasUpper = password.any { it.isUpperCase() }
+        val hasLower = password.any { it.isLowerCase() }
+        val hasDigit = password.any { it.isDigit() }
+        if (!(hasUpper && hasLower && hasDigit)) {
+            throw AuthError("Password must be at least 8 characters and include uppercase, lowercase, and a number.")
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        ApiService.onAuthTokenExpired = null
     }
 
     class AuthError(message: String) : Exception(message)

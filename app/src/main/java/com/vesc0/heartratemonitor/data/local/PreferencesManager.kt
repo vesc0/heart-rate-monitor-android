@@ -33,9 +33,14 @@ object PreferencesManager {
         get() = prefs.getString("auth_email", null)
         set(value) = prefs.edit().putString("auth_email", value).apply()
 
-    var username: String?
-        get() = prefs.getString("auth_username", null)
-        set(value) = prefs.edit().putString("auth_username", value).apply()
+    var name: String?
+        get() = prefs.getString("auth_name", null) ?: prefs.getString("auth_username", null)
+        set(value) {
+            prefs.edit()
+                .putString("auth_name", value)
+                .putString("auth_username", value)
+                .apply()
+        }
 
     var age: String?
         get() = prefs.getString("auth_age", null)
@@ -60,6 +65,7 @@ object PreferencesManager {
     fun clearProfile() {
         prefs.edit()
             .remove("auth_email")
+            .remove("auth_name")
             .remove("auth_username")
             .remove("auth_age")
             .remove("auth_health_issues")
@@ -68,6 +74,20 @@ object PreferencesManager {
             .remove("auth_weight_kg")
             .apply()
     }
+
+    // --- App appearance ---
+
+    var appTheme: String
+        get() = prefs.getString("app_theme", "system") ?: "system"
+        set(value) {
+            prefs.edit().putString("app_theme", value).apply()
+        }
+
+    var profileUnitSystem: String
+        get() = prefs.getString("profile_unit_system", "metric") ?: "metric"
+        set(value) {
+            prefs.edit().putString("profile_unit_system", value).apply()
+        }
 
     // --- Heart rate log ---
 

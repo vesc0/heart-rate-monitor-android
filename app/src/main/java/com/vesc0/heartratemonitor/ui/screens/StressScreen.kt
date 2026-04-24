@@ -19,6 +19,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.vesc0.heartratemonitor.data.model.HeartRateEntry
 import com.vesc0.heartratemonitor.data.model.SessionPhase
 import com.vesc0.heartratemonitor.ui.components.HeartTimerView
+import com.vesc0.heartratemonitor.ui.theme.buttonTextColor
 import com.vesc0.heartratemonitor.viewmodel.AuthViewModel
 import com.vesc0.heartratemonitor.viewmodel.HeartRateViewModel
 import com.vesc0.heartratemonitor.viewmodel.StressViewModel
@@ -146,7 +147,7 @@ fun StressContent(vm: HeartRateViewModel, auth: AuthViewModel, showTopBar: Boole
                                     stressVM.userWeightKg = userWeightKg?.toDoubleOrNull()
                                     stressVM.startSession()
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red, contentColor = Color.White),
                                 shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -239,7 +240,7 @@ fun StressContent(vm: HeartRateViewModel, auth: AuthViewModel, showTopBar: Boole
                             Spacer(modifier = Modifier.height(24.dp))
                             Button(
                                 onClick = { stressVM.resetToIdle() },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color.Red, contentColor = Color.White),
                                 shape = RoundedCornerShape(16.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -264,7 +265,7 @@ fun StressContent(vm: HeartRateViewModel, auth: AuthViewModel, showTopBar: Boole
                 if (phase == SessionPhase.MEASURING) {
                     OutlinedButton(
                         onClick = { stressVM.stopSessionEarly() },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = buttonTextColor()),
                         modifier = Modifier.padding(bottom = 20.dp)
                     ) { Text("Stop") }
                 }
