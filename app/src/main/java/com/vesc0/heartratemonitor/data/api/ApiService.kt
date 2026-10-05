@@ -113,7 +113,7 @@ object ApiService {
             gson.toJson(features),
             object : TypeToken<Map<String, Any>>() {}.type
         )
-        return post("/stress-predict-llm", bodyMap, authenticated = true)
+        return post("/stress-analysis", bodyMap, authenticated = true)
     }
 
     // --- Internal ---

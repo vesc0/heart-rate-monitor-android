@@ -254,7 +254,6 @@ class StressViewModel : ViewModel() {
                 val freqStep = fs / nSamples
                 var lfSum = 0.0
                 var hfSum = 0.0
-                var totalSum = 0.0
 
                 for (k in 1..nFreq) {
                     val freq = k * freqStep
@@ -265,15 +264,15 @@ class StressViewModel : ViewModel() {
                         re += uniform[ni] * cos(angle)
                         im -= uniform[ni] * sin(angle)
                     }
-                    val psd = (re * re + im * im) / nSamples
-                    totalSum += psd
+                    // Band power in ms², the scale the stress model was trained on.
+                    val psd = 2.0 * (re * re + im * im) / (nSamples.toDouble() * nSamples)
                     if (freq in 0.04..0.15) lfSum += psd
                     if (freq in 0.15..0.40) hfSum += psd
                 }
 
                 lfPower = lfSum
                 hfPower = hfSum
-                totalPower = totalSum
+                totalPower = lfSum + hfSum
                 lfHfRatio = if (hfPower > 0) lfPower / hfPower else 0.0
                 val lfHfTotal = lfPower + hfPower
                 lfNorm = if (lfHfTotal > 0) lfPower / lfHfTotal * 100.0 else 0.0
